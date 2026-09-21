@@ -2,9 +2,9 @@ rules_version = '2';
 
 /* Scout — Firestore security rules.
  *
- * These are the entire security model. The Firebase web config in
- * firebase-config.js is PUBLIC by design and protects nothing; everything that
- * keeps one family's data away from another is in this file.
+ * These are the entire security model. The Firebase web config in config.js is
+ * PUBLIC by design and protects nothing; everything that keeps one family's
+ * data away from another is in this file.
  *
  * Shape:
  *   households/{hid}                      the dog, settings, who owns it
@@ -18,7 +18,8 @@ rules_version = '2';
  * array would require them to rewrite a field on a document they cannot yet
  * read, which is both harder to express and much harder to audit.
  *
- * Test with:  firebase emulators:exec --only firestore "node tests/rules.test.mjs"
+ * Verified by tests/rules.test.mjs — 23 assertions against the emulator:
+ *   npx firebase-tools emulators:exec --only firestore \n *       --project scout-rules-test "node tests/rules.test.mjs"
  */
 
 service cloud.firestore {
