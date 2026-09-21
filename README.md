@@ -8,7 +8,8 @@ A shared puppy-raising app for a household. Static PWA, no build step.
 one-tap logging with undo, editable dog details, and backup/restore all work.
 Sync between devices does not exist yet — everything is on-device.
 
-Working name. Nothing is published, so renaming is a find-and-replace.
+Working name — renaming now means a repo rename and a new Pages URL, so it is
+no longer free. Decide soon if it's going to change.
 
 ## Run it
 
