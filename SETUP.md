@@ -54,7 +54,7 @@ everyone's data the moment they add Scout to their Home Screen.
 
 ### Checking the rules yourself
 
-They're already verified — 23 assertions covering the cases that matter, run
+They're already verified — 28 assertions covering the cases that matter, run
 against the Firestore emulator:
 
 ```

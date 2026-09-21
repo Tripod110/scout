@@ -18,7 +18,7 @@ rules_version = '2';
  * array would require them to rewrite a field on a document they cannot yet
  * read, which is both harder to express and much harder to audit.
  *
- * Verified by tests/rules.test.mjs — 23 assertions against the emulator:
+ * Verified by tests/rules.test.mjs — 28 assertions against the emulator:
  *   npx firebase-tools emulators:exec --only firestore --project scout-rules-test "node tests/rules.test.mjs"
  */
 
