@@ -22,7 +22,7 @@ const Onboard = (() => {
   let editing = null;          // field name when reusing a screen to edit
 
   const STEPS = [
-    'welcome', 'yourName', 'dogName', 'dogAge',
+    'welcome', 'join', 'yourName', 'dogName', 'dogAge',
     'dogSize', 'deepChest', 'confinement', 'breed', 'checklist', 'done'
   ];
 
@@ -47,6 +47,7 @@ const Onboard = (() => {
   }
 
   function applies(name) {
+    if (name === 'join') return false;          // only reached deliberately
     if (name === 'deepChest') {
       const cls = draft.sizeClass;
       return cls === 'medium' || cls === 'large' || cls === 'giant';
@@ -110,9 +111,20 @@ const Onboard = (() => {
       ${shouldWarnAboutInstall() ? installFirstCard() : ''}
 
       ${bigButton({ action: 'ob-start', label: 'Set up my puppy', sub: 'Takes about a minute' })}
+      ${firebaseConfigured() ? bigButton({ action: 'ob-join-screen', label: 'Join my family', sub: 'Someone gave me a code', tone: 'quiet' }) : ''}
 
-      <p class="ob-foot">Scout works on one phone at the moment — sharing between phones is being built. Everything stays on your device; nothing is sent anywhere.</p>
+      <p class="ob-foot">${firebaseConfigured()
+        ? 'Whoever sets up first can invite the rest of the household — everyone then sees the same puppy.'
+        : 'Scout works on one phone at the moment. Everything stays on your device; nothing is sent anywhere.'}</p>
       <p class="ob-foot">Scout is not a vet. If something about your puppy worries you, call your vet — this app will always tell you to do that rather than guess.</p>`,
+
+    join: () => `
+      ${backBtn('welcome')}
+      <h2>What's the code?</h2>
+      <p class="ob-lede">Ask whoever set Scout up to tap <strong>Invite someone</strong> in Settings. Codes last an hour.</p>
+      ${field({ id: 'ob-join-name', label: 'Your name', value: '', placeholder: 'e.g. Dad' })}
+      ${field({ id: 'ob-code', label: 'Invite code', placeholder: 'ABC123' })}
+      ${bigButton({ action: 'ob-do-join', label: 'Join' })}`,
 
     yourName: () => `
       ${backBtn()}
@@ -215,7 +227,7 @@ const Onboard = (() => {
   };
 
   function backBtn(to) {
-    if (step <= 1 && !to) return '';           // nothing useful to go back to
+    if (step <= 2 && !to) return '';           // nothing useful to go back to
     return `<button class="back" data-action="ob-back"${to ? ` data-value="${esc(to)}"` : ''}>${icon('back', 20)} Back</button>`;
   }
 
@@ -309,6 +321,25 @@ const Onboard = (() => {
 
     switch (action) {
       case 'ob-start':       draft = {}; go('yourName'); return true;
+      case 'ob-join-screen': go('join'); return true;
+
+      case 'ob-do-join': {
+        const name = val('#ob-join-name');
+        const code = val('#ob-code');
+        if (!name) { toast('Pop your name in first'); return true; }
+        if (!code) { toast('Enter the code you were given'); return true; }
+        toast('Joining…');
+        /* The household has to exist locally before the merge lands, otherwise
+           incoming members and events have nowhere to go. */
+        Store.createHousehold(name);
+        Sync.join(code, name).then(res => {
+          if (!res.ok) { toast(res.error); Store.resetAll(); App.render(); return; }
+          Store.finishOnboarding();
+          App.goTab('today');
+          toast('Joined — you’ll see everything the others log');
+        });
+        return true;
+      }
       case 'ob-cancel-edit': cancelEdit(); return true;
 
       case 'ob-back': {

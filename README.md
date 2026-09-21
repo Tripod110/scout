@@ -48,6 +48,11 @@ than the dog. That is the product, not a stylistic choice.
 | `onboard.js` | Setup flow — one question per screen. |
 | `today.js` | The Today screen and the potty schedule. |
 | `app.js` | Router, one delegated tap handler, boot, SW registration. |
+| `sync.js` | Firestore sync. Two listeners, events merged by id. |
+| `push.js` | Push subscription, gated on the Worker existing. |
+| `config.js` | Firebase config and Worker URL. Public by design. |
+| `firestore.rules` | The entire security model. |
+| `worker/` | Cloudflare Worker for reminders. Holds no Google credentials. |
 | `tools/release.mjs` | Version bump + drift guard. |
 | `tests/params.test.js` | Assertions on the engines. |
 
@@ -77,19 +82,26 @@ traces to a forum post. The shipped rule is type-and-surface:
 **Escaping:** a field ending in `Html` is caller-built markup. Everything else
 is escaped. Greppable beats careful.
 
-## The iOS problem, and why sync is next
+## Sync and reminders
+
+Both are built but need accounts only you can create — see **[SETUP.md](SETUP.md)**.
+Until they're configured Scout runs exactly as before: one phone, no reminders,
+nothing sent anywhere. Neither half shows a control that can't work.
+
+## The iOS problem, and why sync came first
 
 On iOS a home-screen web app runs in a **different storage container from
 Safari** — localStorage is not shared. Since iOS Web Push requires the app to be
 on the Home Screen, the documented setup path would otherwise wipe the setup.
 
-Two mitigations ship in v1: the welcome screen tells iOS Safari users to install
-*first*, and Settings has a backup/restore file. Neither is a real fix. Firestore
-sync is, which is why it moved to the front of the queue.
+Three defences now: the welcome screen tells iOS Safari users to install
+*first*, Settings has a backup/restore file, and — once configured — Firestore
+sync means the data was never only on one device to begin with. The third is the
+actual fix; the first two are splints for anyone who hasn't set it up.
 
 ## What's next
 
-Sync · M2 sleep and bite patterns · M3 socialisation woven into Today ·
+M2 sleep and bite patterns · M3 socialisation woven into Today ·
 M4 push via a Cloudflare Worker ported from `peak/worker/` · M5 curriculum ·
 M6 absence ladder · M7 AI coach behind a pre-render red-flag gate.
 

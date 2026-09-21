@@ -120,9 +120,28 @@ const App = (() => {
         ], String(st.settings.pottySlider))}
       `)}
 
+      ${sharingCard()}
+
+      ${remindersCard()}
+
+      ${card(`
+        <h2>Bedtime</h2>
+        <p class="stat-why">Scout goes quiet overnight — no reminders, and overnight accidents are kept out of the daytime figures. You'll get a last-call prompt ${esc(LAST_CALL_MINUTES)} minutes before.</p>
+        ${choiceList('set-bedtime', [
+          { value: '21', label: '9pm' }, { value: '22', label: '10pm' },
+          { value: '23', label: '11pm' }, { value: '0', label: 'Midnight' }
+        ], String(st.settings.bedtime))}
+        <p class="stat-why" style="margin-top:.8rem">Up at</p>
+        ${choiceList('set-waketime', [
+          { value: '6', label: '6am' }, { value: '7', label: '7am' }, { value: '8', label: '8am' }
+        ], String(st.settings.wakeTime))}
+      `)}
+
       ${card(`
         <h2>Backup</h2>
-        <p class="stat-why">Everything is stored on this phone only. Clearing your browser data, losing the phone, or adding Scout to your Home Screen will all lose it — so save a copy now and then.</p>
+        <p class="stat-why">${Sync.connected
+          ? 'Your logs are also on the other phones in your household, so this is belt and braces — but a file you can email yourself costs nothing.'
+          : 'Everything is stored on this phone only. Clearing your browser data, losing the phone, or adding Scout to your Home Screen will all lose it — so save a copy now and then.'}</p>
         <button class="claim-btn" data-action="export">Save a backup file</button>
         <button class="claim-btn" data-action="import" style="margin-top:.5rem">Restore from a backup</button>
       `)}
@@ -135,8 +154,52 @@ const App = (() => {
         <button class="claim-btn danger" data-action="reset">Delete and start again</button>
       `)}
 
-      <p class="ob-foot">Scout works on one phone at the moment. Sharing between phones is being built.</p>
       <p class="ob-foot">Scout is not a veterinary service and does not diagnose. Anything that worries you about your puppy's health is a question for your vet.</p>`;
+  }
+
+  /* Sharing. The code is a door the owner opens for an hour, not a permanent
+     key left under the mat — a six-character code you can read across a kitchen
+     is only safe because it expires. */
+  function sharingCard() {
+    if (!firebaseConfigured()) {
+      return card(`
+        <h2>Sharing</h2>
+        <p class="stat-why">Not set up on this copy of Scout. Everything stays on this phone.</p>
+      `);
+    }
+    const s = Sync.getStatus();
+    const members = Store.state.household?.members || [];
+    const connected = Sync.connected;
+
+    return card(`
+      <h2>Sharing</h2>
+      <p class="stat-why">
+        ${s.status === 'live' && connected ? 'On — everyone with the app sees the same puppy.'
+        : s.status === 'live' ? 'Ready. Invite the rest of the household and you’ll all see the same puppy.'
+        : s.status === 'connecting' ? 'Connecting…'
+        : s.status === 'error' ? esc(s.detail)
+        : 'Working offline — changes will sync when you’re back online.'}
+      </p>
+      ${members.length ? `<ul class="members">${members.map(m =>
+        `<li>${esc(m.name)}${m.deviceId === Store.deviceId() ? ' <span class="you">this phone</span>' : ''}</li>`).join('')}</ul>` : ''}
+      <button class="claim-btn" data-action="open-invite">Invite someone</button>
+      ${connected ? `<button class="claim-btn" data-action="leave-household" style="margin-top:.5rem">Stop sharing on this phone</button>` : ''}
+    `);
+  }
+
+  /* Reminders only appear once the Worker exists. No switch that does nothing. */
+  function remindersCard() {
+    if (!pushConfigured()) return '';
+    const why = Push.unavailableReason();
+    const on = Push.enabled();
+    return card(`
+      <h2>Reminders</h2>
+      <p class="stat-why">${on
+        ? 'On — Scout will nudge you when she’s due out. Nothing between your bedtime and morning.'
+        : 'A nudge on your phone when she’s due out, and nothing overnight.'}</p>
+      ${why ? noteHtml(esc(why), 'warn')
+            : `<button class="claim-btn" data-action="${on ? 'push-off' : 'push-on'}">${on ? 'Turn reminders off' : 'Turn reminders on'}</button>`}
+    `);
   }
 
   function editRow(field, label, value) {
@@ -207,6 +270,40 @@ const App = (() => {
       case 'export':      doExport(); return;
       case 'import':      doImport(); return;
       case 'undo-event':  Store.tombstone(value); toast('Undone'); render(); return;
+      case 'push-on':
+        Push.enable().then(r => { toast(r.ok ? 'Reminders on' : r.error); render(); });
+        return;
+      case 'push-off':
+        Push.disable().then(() => { toast('Reminders off'); render(); });
+        return;
+
+      case 'set-bedtime': Store.setSettings({ bedtime: Number(value) }); render(); return;
+      case 'set-waketime':Store.setSettings({ wakeTime: Number(value) }); render(); return;
+
+      case 'open-invite': {
+        toast('Getting a code…');
+        (async () => {
+          try {
+            if (!Sync.connected) await Sync.createRemote();
+            const code = await Sync.openInvite();
+            openSheet(`
+              <h2>Invite someone</h2>
+              <p class="sheet-lede">On their phone: open Scout, tap <strong>Join my family</strong>, and type this in.</p>
+              <p class="invite-code">${esc(code)}</p>
+              <p class="sheet-lede">It works for the next hour, then stops. You can always make a new one.</p>
+            `);
+          } catch (e) {
+            toast('Couldn’t create an invite — ' + (e.message || 'try again'));
+          }
+        })();
+        return;
+      }
+
+      case 'leave-household':
+        if (confirm('Stop sharing on this phone? Your logs stay here, but you won’t see the others’ any more.')) {
+          Sync.leave().then(() => { toast('Sharing stopped'); render(); });
+        }
+        return;
       case 'reset':
         if (confirm('Delete everything on this device and start again?')) { Store.resetAll(); location.reload(); }
         return;
@@ -225,6 +322,12 @@ const App = (() => {
     Store.load();
     applyScale(Store.state.settings.scale);
     Store.autoCloseStaleNap(Date.now());
+
+    /* Sync is additive: the app is fully usable before it connects, and stays
+       usable if it never does. Nothing below waits on it. */
+    Sync.onStatus(() => { if (Store.state.onboarded) render(); });
+    Store.subscribe(() => { if (Store.state.onboarded && !Onboard.editing) render(); });
+    Sync.init().catch(e => console.warn('sync', e));
 
     document.addEventListener('click', onTap);
 

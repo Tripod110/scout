@@ -1,0 +1,27 @@
+name = "scout-reminders"
+main = "src/index.js"
+compatibility_date = "2026-09-21"
+
+[vars]
+# Tunable without shipping an app update — that's the point of them living here.
+ALLOWED_ORIGIN = "https://tripod110.github.io"
+
+# Public half of the VAPID keypair — not secret, it ships to every subscribing
+# browser as the applicationServerKey. Generate both halves with:
+#   node scripts/generate-vapid-keys.mjs
+VAPID_PUBLIC_KEY = "PASTE_ME"
+VAPID_SUBJECT    = "mailto:you@example.com"   # a contact a push service can reach
+
+# Fires runReminders(). Five minutes is the resolution of a toilet reminder;
+# finer costs more and helps nobody.
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Create with: npx wrangler kv namespace create SCOUT_KV
+# then paste the id below.
+[[kv_namespaces]]
+binding = "SCOUT_KV"
+id = "PASTE_ME"
+
+# Secrets, never in this file:
+#   npx wrangler secret put VAPID_PRIVATE_KEY   (the JWK line from the script)

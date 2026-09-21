@@ -167,6 +167,54 @@ function nightMultiplier(cleanNightStreak, accidentsLastNight) {
 }
 function sleepsThroughNight(cleanNightStreak) { return (cleanNightStreak || 0) >= 10; }
 
+/* ---------- overnight ----------
+   Nobody is setting an alarm for 3am, and a schedule that assumes they are
+   produces guilt and then a closed app. So overnight is a declared state
+   rather than a gap in the data.
+
+   The honest position, which the app should state once and then stop
+   repeating: a puppy of 8-10 weeks usually needs 1-2 breaks in the night, and
+   most sleep through at around 4-5 months. If nobody gets up before then,
+   there will be overnight accidents. That is a management problem — put her
+   somewhere the accident is survivable — not a training failure, and the
+   daytime trend should not be dragged down by it. */
+
+function isOvernight(date, bedtime, wakeTime) {
+  const h = date.getHours() + date.getMinutes() / 60;
+  const b = bedtime == null ? 22 : bedtime;
+  const w = wakeTime == null ? 7 : wakeTime;
+  return b > w ? (h >= b || h < w) : (h >= b && h < w);
+}
+
+/* The window before bed where a last trip out is worth prompting — the single
+   highest-value trip of the day if nobody is getting up later. */
+const LAST_CALL_MINUTES = 45;
+
+function isLastCall(date, bedtime) {
+  const b = bedtime == null ? 22 : bedtime;
+  const h = date.getHours() + date.getMinutes() / 60;
+  const mins = (b - h) * 60;
+  return mins > 0 && mins <= LAST_CALL_MINUTES;
+}
+
+function nextWakeTs(now, wakeTime) {
+  const w = wakeTime == null ? 7 : wakeTime;
+  const d = new Date(now);
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(w), Math.round((w % 1) * 60), 0, 0);
+  if (target.getTime() <= now) target.setDate(target.getDate() + 1);
+  return target.getTime();
+}
+
+/* How many night breaks a puppy this age typically still needs. Used to set
+   expectations honestly, never to instruct someone to get up. */
+function expectedNightBreaks(weeks) {
+  if (weeks === null) return null;
+  if (weeks < 10) return 2;
+  if (weeks < 14) return 1;
+  if (weeks < 20) return 1;
+  return 0;
+}
+
 /* ---------- absence ladder ----------
    Starts at 5 SECONDS, not 5 minutes. ~80% of reps sit at or below the current
    base: randomised difficulty beats a linear ramp because under a ramp every rep
@@ -454,7 +502,8 @@ if (typeof module !== 'undefined' && module.exports) {
     pottyBaseMinutes, pottyIntervalMinutes, POTTY_TRIGGERS, applyTrigger, nightMultiplier, sleepsThroughNight,
     LADDER_START_SECONDS, LADDER_GRADUATE_SECONDS, OUTCOMES, ladderGrowthStep, absenceCeilingSeconds,
     planAbsenceRep, updateLadder, separationRedFlags, absenceCeilingDetail,
-    SLEEP_BAND_HOURS, wakeWindowMinutes, isOvertired, BITE_SEVERITY,
+    isOvernight, isLastCall, nextWakeTs, expectedNightBreaks, LAST_CALL_MINUTES,
+  SLEEP_BAND_HOURS, wakeWindowMinutes, isOvertired, BITE_SEVERITY,
     SOCIALISATION_CORE_DEADLINE_WEEKS, socialisationPhase, fearPeriodBanner,
     PASS_THRESHOLD, RECALL_PASS_THRESHOLD, MAX_LURED_REPS, MAX_BLOCKS_PER_SKILL_PER_DAY,
     LONG_SESSION_WARN_MINUTES, readyToLevelUp,

@@ -13,14 +13,14 @@
  * to let them drift; doing it by hand is how a release silently ships nothing.
  */
 
-const VERSION = 6;
+const VERSION = 9;
 const CACHE = 'scout-v' + VERSION;
 
 const SHELL = [
   './', 'index.html',
-  'style.css?v=6',
-  'params.js?v=6', 'store.js?v=6', 'ui.js?v=6',
-  'onboard.js?v=6', 'today.js?v=6', 'app.js?v=6',
+  'style.css?v=9',
+  'config.js?v=9', 'params.js?v=9', 'store.js?v=9', 'ui.js?v=9', 'sync.js?v=9', 'push.js?v=9',
+  'onboard.js?v=9', 'today.js?v=9', 'app.js?v=9',
   'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon-maskable-512.png'
 ];
@@ -80,4 +80,32 @@ self.addEventListener('fetch', e => {
   }
 
   e.respondWith(caches.match(req).then(hit => hit || fetch(req)));
+});
+
+/* ---------- push ----------
+   iOS allows no silent pushes: every message must result in a visible
+   notification or the subscription is revoked. So there is no branch here that
+   chooses not to show one. */
+
+self.addEventListener('push', e => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch { /* fall through to defaults */ }
+  e.waitUntil(self.registration.showNotification(data.title || 'Scout', {
+    body: data.body || 'Time for a toilet break.',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    tag: data.tag || 'scout',
+    renotify: false
+  }));
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) {
+      if (c.url.includes(self.registration.scope)) return c.focus();
+    }
+    return self.clients.openWindow(self.registration.scope);
+  })());
 });

@@ -87,6 +87,8 @@ const Today = (() => {
     const tired = isOvertired(mss, w);
     const empties = emptyTripRun(now);
     const hasBaseline = !!Store.lastEventOf(['potty', 'accident']);
+    const overnight = isOvernight(new Date(now), st.settings.bedtime, st.settings.wakeTime);
+    const lastCall = isLastCall(new Date(now), st.settings.bedtime);
 
     let html = '';
 
@@ -103,6 +105,52 @@ const Today = (() => {
           Opening a brand-new app on a red "NOW" alarm tells someone they have
           already failed thirty seconds after setting it up. There is no clock
           until there is a first event to start it from. */
+    if (overnight) {
+      /* No countdown, no red, no reminders. Nobody is getting up at 3am, and a
+         clock that insists otherwise just teaches people to ignore the app. */
+      const wakeTs = nextWakeTs(now, st.settings.wakeTime);
+      const nights = expectedNightBreaks(w);
+      html += card(`
+        <h2>Goodnight</h2>
+        <p class="stat-big">Back at ${esc(fmtTime(wakeTs))}</p>
+        <p class="stat-why">Scout is quiet until morning — no reminders overnight. First thing when you're up, take her straight out; after a long sleep is the strongest signal there is.</p>
+      `, 'night-card');
+
+      if (nights > 0) {
+        html += noteHtml(`<b>At ${esc(Math.floor(w))} weeks she probably still can’t last the whole night.</b> If nobody’s getting up — and most people aren’t — expect the odd overnight accident and set her up somewhere it doesn’t matter. Most puppies sleep right through at around four to five months. It isn’t a training failure.`, 'warn');
+      }
+
+      html += `
+        <h3 class="row-head">If you're up anyway</h3>
+        <div class="log-grid">
+          <button class="log-btn primary" data-action="log-potty-went">
+            <span class="lg-main">She went</span><span class="lg-sub">outside</span>
+          </button>
+          <button class="log-btn warn" data-action="log-accident">
+            <span class="lg-main">Accident</span><span class="lg-sub">overnight</span>
+          </button>
+        </div>`;
+
+      html += card(`
+        <h2>Today so far</h2>
+        <div class="mini-stats">
+          <div><b>${roll.pottyOut}</b><span>outside</span></div>
+          <div><b>${roll.accidents}</b><span>accidents</span></div>
+          <div><b>${roll.meals}</b><span>meals</span></div>
+          <div><b>${roll.bites}</b><span>nips</span></div>
+        </div>
+      `);
+      return html;
+    }
+
+    if (lastCall) {
+      html += card(`
+        <h2 class="plain">Last call before bed</h2>
+        <p class="stat-why">The most valuable trip of the day if nobody's getting up later. Take her out now, keep it boring, and lift the water bowl about an hour before lights out — but never if she's unwell or it's hot.</p>
+        <button class="claim-btn" data-action="log-bedtime">Took her out — goodnight</button>
+      `, 'lastcall-card');
+    }
+
     if (!hasBaseline) {
       html += card(`
         <h2>Getting started</h2>
@@ -199,6 +247,17 @@ const Today = (() => {
     return html;
   }
 
+  /* The worker holds one timestamp per household and nothing else, so it has to
+     be told whenever the schedule moves. Fire-and-forget: a failed push sync
+     must never block a log. */
+  function pushDue(now) {
+    if (typeof Push === 'undefined' || !Push.enabled()) return;
+    const st = Store.state.settings;
+    if (isOvernight(new Date(now), st.bedtime, st.wakeTime)) return;
+    const due = nextDue(now);
+    if (due) Push.syncDue(due);
+  }
+
   /* ---------- actions ---------- */
 
   function handle(action, value) {
@@ -206,6 +265,7 @@ const Today = (() => {
 
     /* A nap nobody closed would otherwise sit open forever. */
     Store.autoCloseStaleNap(now);
+    setTimeout(() => pushDue(Date.now()), 0);
 
     switch (action) {
       case 'claim':
@@ -243,8 +303,20 @@ const Today = (() => {
 
       case 'log-accident': {
         closeNapIfImplied('accident', now);
-        const ev = Store.addEvent('accident', {});
-        toast('Logged, no blame', ev.id);
+        const st = Store.state.settings;
+        const overnight = isOvernight(new Date(now), st.bedtime, st.wakeTime);
+        /* Tagged so the daytime trend isn't dragged down by something nobody
+           was awake for. It still gets logged — hiding it would corrupt the
+           picture — it just isn't counted as a daytime miss. */
+        const ev = Store.addEvent('accident', { overnight });
+        toast(overnight ? 'Logged — overnight ones don’t count against the day' : 'Logged, no blame', ev.id);
+        return true;
+      }
+
+      case 'log-bedtime': {
+        const ev = Store.addEvent('potty', { result: 'went', place: 'outside', lastCall: true });
+        Store.addEvent('bedtime', {});
+        toast('Goodnight — Scout will be quiet until morning', ev.id);
         return true;
       }
 

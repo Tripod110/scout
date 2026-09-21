@@ -1,0 +1,114 @@
+rules_version = '2';
+
+/* Scout — Firestore security rules.
+ *
+ * These are the entire security model. The Firebase web config in
+ * firebase-config.js is PUBLIC by design and protects nothing; everything that
+ * keeps one family's data away from another is in this file.
+ *
+ * Shape:
+ *   households/{hid}                      the dog, settings, who owns it
+ *   households/{hid}/members/{uid}        one doc per person who has joined
+ *   households/{hid}/events/{eventId}     append-only log
+ *   inviteCodes/{CODE}                    short-lived code -> householdId
+ *
+ * Membership is a subcollection rather than an array on the household doc
+ * because it makes self-join expressible: a stranger holding a valid code may
+ * create exactly one document — their own membership — and nothing else. An
+ * array would require them to rewrite a field on a document they cannot yet
+ * read, which is both harder to express and much harder to audit.
+ *
+ * Test with:  firebase emulators:exec --only firestore "node tests/rules.test.mjs"
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    /* One exists() per evaluation. Rule reads are billed, which is why the app
+       keeps its listener count down — see the read budget in README. */
+    function isMember(hid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/households/$(hid)/members/$(request.auth.uid));
+    }
+
+    /* A code is a door that is only open for a while. The owner opens it from
+       Settings, reads six characters across the kitchen, and it shuts itself —
+       which is a far better answer to brute force than a longer code nobody can
+       read aloud. */
+    function validInvite(hid, code) {
+      let path = /databases/$(database)/documents/inviteCodes/$(code);
+      return signedIn()
+        && exists(path)
+        && get(path).data.householdId == hid
+        && get(path).data.expiresAt > request.time;
+    }
+
+    match /inviteCodes/{code} {
+      /* Readable by any signed-in user: resolving a code you were given is the
+         whole point. Guessing one is the attack, and the expiry window plus
+         App Check is what answers it. */
+      allow get: if signedIn();
+      allow list: if false;                       // never enumerate codes
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['householdId', 'createdBy', 'expiresAt'])
+        && request.resource.data.createdBy == request.auth.uid
+        && isMember(request.resource.data.householdId)
+        /* A door nobody can leave propped open: one hour, enforced server-side
+           so a modified client cannot mint a permanent code. */
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt < request.time + duration.value(1, 'h');
+
+      allow update: if false;                     // rotate by deleting and re-creating
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+    }
+
+    match /households/{hid} {
+      allow get, list: if isMember(hid);
+
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow update: if isMember(hid)
+        && request.resource.data.ownerUid == resource.data.ownerUid;   // ownership is not transferable
+
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+
+      match /members/{uid} {
+        allow read: if isMember(hid);
+
+        /* The join. A stranger with a live code may create exactly one document
+           and only their own, and may not name themselves a member of a
+           household the code doesn't point at. */
+        allow create: if signedIn()
+          && request.auth.uid == uid
+          && validInvite(hid, request.resource.data.joinCode);
+
+        allow update: if signedIn() && request.auth.uid == uid;   // rename yourself
+        allow delete: if signedIn() && request.auth.uid == uid;   // leave
+      }
+
+      match /events/{eventId} {
+        allow read: if isMember(hid);
+
+        allow create: if isMember(hid)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.ts is number;
+
+        /* APPEND-ONLY, enforced here and not merely by convention. The only
+           permitted mutation is tombstoning — the undo button — and even then
+           only the `deleted` flag may change. Rewriting history is what breaks
+           a four-handler merge, so the database refuses it. */
+        allow update: if isMember(hid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted'])
+          && request.resource.data.deleted == true;
+
+        allow delete: if false;
+      }
+    }
+  }
+}

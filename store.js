@@ -31,8 +31,15 @@ function emptyState() {
       scale: 'normal',        // normal | large | largest
       units: 'imperial',
       pottySlider: 1.0,
-      quietHours: [22, 7],
-      remindersOn: false
+      /* Bedtime is a real constraint, not a failure of commitment. Most owners
+         are not getting up at 3am, and a schedule that assumes they will just
+         produces guilt and a silent app. Overnight is therefore a declared
+         state: no reminders, accidents logged but kept out of the daytime
+         trend, and a last-call prompt before lights out. */
+      bedtime: 22,
+      wakeTime: 7,
+      remindersOn: false,
+      overnightAccidentsCount: false
     },
     events: [],               // append-only
     rollups: {},              // 'YYYY-MM-DD' -> derived summary
@@ -118,6 +125,7 @@ function addEvent(type, payload, at) {
   state.events.push(ev);
   rebuildRollup(dayKey(ev.ts));
   commit();
+  if (syncAdapter?.pushEvent) { try { syncAdapter.pushEvent(ev); } catch (e) { console.warn('sync', e); } }
   return ev;
 }
 
@@ -127,6 +135,7 @@ function tombstone(eventId) {
   ev.deleted = true;                       // never spliced — see header
   rebuildRollup(dayKey(ev.ts));
   commit();
+  if (syncAdapter?.pushTombstone) { try { syncAdapter.pushTombstone(eventId); } catch (e) { console.warn('sync', e); } }
 }
 
 function eventsOn(key) {
@@ -197,7 +206,7 @@ function rebuildRollup(key) {
   const evs = eventsOn(key);
   const r = {
     key,
-    pottyOut: 0, pottyNothing: 0, accidents: 0, padUse: 0,
+    pottyOut: 0, pottyNothing: 0, accidents: 0, overnightAccidents: 0, padUse: 0,
     bites: 0, biteSeverityTotal: 0, biteMax: 0,
     sleepMinutes: 0, meals: 0,
     socialisationReps: 0, socialisationWorried: 0,
@@ -216,8 +225,12 @@ function rebuildRollup(key) {
         else r.pottyOut++;
         break;
       case 'accident':
-        r.accidents++;
-        r.heatmap[hour]++;       // the single best diagnostic in the app
+        /* Overnight accidents are counted separately, not hidden. Nobody was
+           awake, so they say nothing about the daytime schedule — and letting
+           them drag the trend down is how a family concludes they're going
+           backwards when they aren't. */
+        if (e.payload.overnight) r.overnightAccidents++;
+        else { r.accidents++; r.heatmap[hour]++; }
         break;
       case 'bite':
         r.bites++;
@@ -372,9 +385,72 @@ function addMember(name) {
   return m;
 }
 
-function setDog(dog) { state.dog = Object.assign({}, state.dog, dog); commit(); }
+function setDog(dog) {
+  state.dog = Object.assign({}, state.dog, dog);
+  commit();
+  if (syncAdapter?.pushDog) { try { syncAdapter.pushDog(state.dog); } catch (e) { console.warn('sync', e); } }
+}
 function setSettings(patch) { state.settings = Object.assign({}, state.settings, patch); commit(); }
 function finishOnboarding() { state.onboarded = true; commit(); }
+
+/* ---------- merging what other people did ----------
+   Merged by id, so order does not matter and two phones writing at the same
+   moment cannot lose a walk. This is the entire payoff of having made the log
+   append-only in the first place. */
+
+function mergeRemoteEvents(incoming) {
+  const byId = new Map(state.events.map(e => [e.id, e]));
+  const touchedDays = new Set();
+  let changed = 0;
+
+  for (const r of incoming) {
+    const local = byId.get(r.id);
+    if (!local) {
+      state.events.push({
+        id: r.id, type: r.type, ts: r.ts, by: r.by, byName: r.byName,
+        payload: r.payload || {}, deleted: !!r.deleted
+      });
+      touchedDays.add(dayKey(r.ts));
+      changed++;
+    } else if (r.deleted && !local.deleted) {
+      /* A tombstone always wins. Someone pressed undo, and undo losing a race
+         would resurrect an entry they deliberately removed. */
+      local.deleted = true;
+      touchedDays.add(dayKey(local.ts));
+      changed++;
+    }
+  }
+
+  if (!changed) return 0;
+  state.events.sort((a, b) => a.ts - b.ts);
+  for (const d of touchedDays) rebuildRollup(d);
+  save(); emit();
+  return changed;
+}
+
+/* The dog is shared state: if one person fixes her date of birth, everyone's
+   schedule should move. Local edits win only until the next snapshot, which is
+   the right trade for a field four people rarely touch. */
+function mergeRemoteDog(dog) {
+  if (!dog) return;
+  const before = JSON.stringify(state.dog);
+  state.dog = Object.assign({}, state.dog, dog);
+  if (JSON.stringify(state.dog) !== before) { save(); emit(); }
+}
+
+function mergeRemoteMembers(members) {
+  if (!state.household) return;
+  state.household.members = members.map(m => ({
+    deviceId: m.uid, name: m.name, remote: true
+  }));
+  save(); emit();
+}
+
+function setHouseholdRemoteId(id) {
+  if (!state.household) return;
+  state.household.remoteId = id || null;
+  commit();
+}
 
 /* ---------- sync seam ----------
    Deliberately a no-op. When Firestore lands, this pushes the tail of the event
@@ -403,6 +479,7 @@ const Store = {
   dayKey, rollup, todayRollup, rebuildRollup, rebuildAllRollups,
   sinceYouLastLooked,
   openNap, autoCloseStaleNap, MAX_NAP_MINUTES, exportJSON, importJSON,
+  mergeRemoteEvents, mergeRemoteDog, mergeRemoteMembers, setHouseholdRemoteId,
   makeInviteCode, createHousehold, addMember, setDog, setSettings, finishOnboarding,
   setSyncAdapter, resetAll
 };

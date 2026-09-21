@@ -7,12 +7,23 @@
      added explicitly, and nothing else ever does. script-src 'self' with no
      'unsafe-inline' is why the service-worker registration lives in app.js:
      there are no inline scripts, so an injected one cannot execute. -->
+<!-- script-src names gstatic because the Firebase SDK loads from there and
+     nowhere else; there is still no 'unsafe-inline', so an injected script
+     cannot execute. connect-src is an allowlist of exactly the Google endpoints
+     Firestore and anonymous auth use — if a stolen value ever did end up in the
+     page, this is what stops it being sent anywhere. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self';
+  script-src 'self' https://www.gstatic.com;
   style-src 'self' 'unsafe-inline';
   img-src 'self' data:;
-  connect-src 'self';
+  connect-src 'self'
+              https://firestore.googleapis.com
+              https://*.workers.dev
+              https://securetoken.googleapis.com
+              https://identitytoolkit.googleapis.com
+              https://www.googleapis.com;
+  frame-src https://*.firebaseapp.com;
   form-action 'none';
   base-uri 'none';
   object-src 'none'">
@@ -29,7 +40,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Scout">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body class="onboarding">
 
@@ -56,11 +67,17 @@
 <div id="sheet-root"></div>
 <div id="toast-root"></div>
 
-<script src="params.js?v=6"></script>
-<script src="store.js?v=6"></script>
-<script src="ui.js?v=6"></script>
-<script src="onboard.js?v=6"></script>
-<script src="today.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
+<script src="config.js?v=9"></script>
+<script src="params.js?v=9"></script>
+<script src="store.js?v=9"></script>
+<script src="ui.js?v=9"></script>
+<script src="onboard.js?v=9"></script>
+<script src="today.js?v=9"></script>
+<script src="sync.js?v=9"></script>
+<script src="push.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
