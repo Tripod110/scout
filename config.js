@@ -14,12 +14,12 @@
  */
 
 const FIREBASE_CONFIG = {
-  apiKey:            'PASTE_ME',
-  authDomain:        'PASTE_ME',
-  projectId:         'PASTE_ME',
-  storageBucket:     'PASTE_ME',
-  messagingSenderId: 'PASTE_ME',
-  appId:             'PASTE_ME'
+  apiKey:            'REDACTED-ROTATED-KEY',
+  authDomain:        'scout-b8b7d.firebaseapp.com',
+  projectId:         'scout-b8b7d',
+  storageBucket:     'scout-b8b7d.firebasestorage.app',
+  messagingSenderId: '800705812928',
+  appId:             '1:800705812928:web:645d8ccc554dee3b255025'
 };
 
 /* An unconfigured app must degrade to local-only rather than throwing on boot.
