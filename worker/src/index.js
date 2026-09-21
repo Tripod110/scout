@@ -115,16 +115,37 @@ async function unsubscribe(body, env) {
   return json({ ok: true }, 200, env);
 }
 
-/* The app POSTs this whenever the schedule moves — a log, a trigger, an edit.
-   `sentFor` is how we avoid pushing twice for the same due time: it records
-   which timestamp we last notified about. */
+/* The app POSTs the whole pending list whenever anything moves — a log, a meal,
+   a claim, an edit. Each POST REPLACES the previous list, which is what makes
+   this self-cancelling: if Dad takes her out, the next POST simply doesn't
+   contain a potty reminder for the old time, so it never fires.
+
+   `fired` records which exact times have already been notified, so a reminder
+   goes once and not every five minutes until someone acts. */
 async function setDue(body, env) {
-  const { householdId, dueAt } = body || {};
-  if (!householdId || !dueAt) return json({ error: 'Missing fields' }, 400, env);
-  await env.SCOUT_KV.put(`due:${householdId}`, JSON.stringify({
-    dueAt: Number(dueAt), setAt: Date.now(), sentFor: null
-  }));
-  return json({ ok: true }, 200, env);
+  const { householdId, reminders } = body || {};
+  if (!householdId || !Array.isArray(reminders)) return json({ error: 'Missing fields' }, 400, env);
+
+  const clean = reminders
+    .filter(r => r && Number(r.at) > 0 && typeof r.kind === 'string')
+    .slice(0, 8)
+    .map(r => ({
+      kind: String(r.kind).slice(0, 16),
+      at: Number(r.at),
+      title: String(r.title || '').slice(0, 80),
+      body: String(r.body || '').slice(0, 160)
+    }));
+
+  const prevRaw = await env.SCOUT_KV.get(`due:${householdId}`);
+  let fired = {};
+  try { fired = JSON.parse(prevRaw || '{}').fired || {}; } catch { /* start clean */ }
+
+  /* Forget anything older than a day so `fired` can't grow without bound. */
+  const cutoff = Date.now() - 86400000;
+  for (const k of Object.keys(fired)) if (fired[k] < cutoff) delete fired[k];
+
+  await env.SCOUT_KV.put(`due:${householdId}`, JSON.stringify({ reminders: clean, fired, setAt: Date.now() }));
+  return json({ ok: true, accepted: clean.length }, 200, env);
 }
 
 /* ---------- the cron ---------- */
@@ -138,17 +159,23 @@ async function runReminders(env) {
     const raw = await env.SCOUT_KV.get(key.name);
     if (!raw) continue;
 
-    let due;
-    try { due = JSON.parse(raw); } catch { continue; }
+    let rec;
+    try { rec = JSON.parse(raw); } catch { continue; }
+    const reminders = rec.reminders || [];
+    const fired = rec.fired || {};
 
-    /* Not due yet, or we already said so. */
-    if (!due.dueAt || due.dueAt > now) continue;
-    if (due.sentFor === due.dueAt) continue;
+    /* Only things that are actually due, haven't been sent, and haven't gone
+       stale. Half an hour late on "she needs the toilet" is not a reminder, it
+       is an accusation — by then it has either happened or it hasn't. */
+    const ripe = reminders.filter(r => {
+      const tag = r.kind + ':' + r.at;
+      return r.at <= now && !fired[tag] && (now - r.at) <= 30 * 60000;
+    });
+    if (!ripe.length) continue;
 
-    /* More than an hour late means the app has been closed for a while and
-       nobody logged anything. Nagging about a break that was due at lunchtime
-       when it is now teatime is noise, not help. */
-    if (now - due.dueAt > 60 * 60000) continue;
+    /* At most one push per run. Two notifications arriving together for the
+       same dog is how people turn notifications off. */
+    const pick = ripe.sort((a, b) => a.at - b.at)[0];
 
     const subs = await env.SCOUT_KV.list({ prefix: `sub:${householdId}:` });
     let sentAny = false;
@@ -159,22 +186,23 @@ async function runReminders(env) {
       let sub;
       try { sub = JSON.parse(sraw); } catch { continue; }
 
-      /* The whole point of the bedtime setting. A sleeping phone still shows
-         notifications, so this has to be enforced server-side too. */
+      /* A sleeping phone still displays notifications, so quiet hours have to
+         be enforced here and not only in the app. */
       if (inQuietHours(sub, now)) continue;
 
       const ok = await push(env, sub, {
-        title: `${sub.dogName} is due out`,
-        body: 'Take her out, and reward her outside the moment she goes.',
-        tag: `scout-potty-${householdId}`
+        title: pick.title || `${sub.dogName} needs you`,
+        body: pick.body || '',
+        tag: `scout-${pick.kind}-${householdId}`
       });
       if (ok) sentAny = true;
       else await env.SCOUT_KV.delete(sk.name);   // gone or expired subscription
     }
 
     if (sentAny) {
-      due.sentFor = due.dueAt;
-      await env.SCOUT_KV.put(key.name, JSON.stringify(due));
+      fired[pick.kind + ':' + pick.at] = now;
+      rec.fired = fired;
+      await env.SCOUT_KV.put(key.name, JSON.stringify(rec));
     }
   }
 }

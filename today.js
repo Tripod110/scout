@@ -231,6 +231,16 @@ const Today = (() => {
       `, soc.phase === 'peak' ? 'urgent' : '');
     }
 
+    const meal = nextMeal(now);
+    if (meal) {
+      const overdueMeal = meal.at <= now;
+      html += card(`
+        <h2>Next meal</h2>
+        <p class="stat-big ${overdueMeal ? 'is-over' : ''}">${esc(overdueMeal ? 'Due now' : fmtRelative(meal.at - now))}</p>
+        <p class="stat-why">Meal ${esc(meal.index)} of ${esc(meal.of)} today. ${esc(fmtAge(w))} and ${esc(SIZE_LABELS[sizeParams(dog).sizeClass]?.split(' — ')[0].toLowerCase() || 'small')} — little and often matters at this age, and long gaps between meals are the part that can actually make a young puppy unwell.</p>
+      `, overdueMeal ? 'due-card is-over' : '');
+    }
+
     /* Today's numbers. Counts only — no streak, no score, no red/green day.
        A streak here would teach the family to stop logging accidents. */
     html += card(`
@@ -247,15 +257,56 @@ const Today = (() => {
     return html;
   }
 
-  /* The worker holds one timestamp per household and nothing else, so it has to
-     be told whenever the schedule moves. Fire-and-forget: a failed push sync
-     must never block a log. */
+  function mealTimestamps(now) {
+    const dayAgo = now - 86400000;
+    return Store.liveEvents().filter(e => e.type === 'meal' && e.ts > dayAgo).map(e => e.ts);
+  }
+
+  function nextMeal(now) {
+    const dog = Store.state.dog;
+    if (!dog?.dob) return null;
+    return nextMealDue(now, mealTimestamps(now), Store.state.settings,
+                       ageWeeks(dog.dob, now), sizeParams(dog).sizeClass);
+  }
+
+  /* Only two things are worth interrupting someone's day for: she needs out, or
+     she needs feeding. Everything else the app knows can wait until they open
+     it. A claim ("I'm taking her out now") removes the potty reminder entirely,
+     because somebody is already dealing with it. */
+  function pendingReminders(now) {
+    const st = Store.state;
+    const dog = st.dog;
+    if (!dog?.dob) return [];
+    const name = dog.name || 'Your puppy';
+    const out = [];
+
+    if (!Store.activeClaim(now)) {
+      const due = nextDue(now);
+      if (due && !isOvernight(new Date(due), st.settings.bedtime, st.settings.wakeTime)) {
+        const last = Store.lastEventOf(['potty', 'accident']);
+        out.push({
+          kind: 'potty', at: due,
+          title: `${name} is due out`,
+          body: last ? `Last went ${fmtDuration(Math.round((due - last.ts) / 60000))} ago. Reward her outside the moment she goes.`
+                     : 'Reward her outside the moment she goes.'
+        });
+      }
+    }
+
+    const meal = nextMeal(now);
+    if (meal && !isOvernight(new Date(meal.at), st.settings.bedtime, st.settings.wakeTime)) {
+      out.push({
+        kind: 'meal', at: meal.at,
+        title: `${name}'s meal ${meal.index} of ${meal.of}`,
+        body: 'She’ll likely need the toilet within half an hour of eating.'
+      });
+    }
+    return out;
+  }
+
   function pushDue(now) {
     if (typeof Push === 'undefined' || !Push.enabled()) return;
-    const st = Store.state.settings;
-    if (isOvernight(new Date(now), st.bedtime, st.wakeTime)) return;
-    const due = nextDue(now);
-    if (due) Push.syncDue(due);
+    Push.syncReminders(pendingReminders(now));
   }
 
   /* ---------- actions ---------- */

@@ -167,6 +167,59 @@ function nightMultiplier(cleanNightStreak, accidentsLastNight) {
 }
 function sleepsThroughNight(cleanNightStreak) { return (cleanNightStreak || 0) >= 10; }
 
+/* ---------- meals ----------
+   Not a nice-to-have on a small puppy. Toy and small breeds under about three
+   months are at real risk of hypoglycaemia if they go too long between meals —
+   wobbliness, trembling, refusing food, pale gums — so the gap between meals
+   matters more than the total amount, and "she'll eat when she's hungry" is
+   wrong at this age.
+
+   The app never says how MUCH to feed. That is prescribing, and it is the vet's
+   call. It only tracks whether a meal has happened. */
+
+function mealsPerDay(weeks, sizeClass) {
+  if (weeks === null) return 3;
+  const small = sizeClass === 'toy' || sizeClass === 'small';
+  if (weeks < 13) return 4;
+  if (weeks < 26) return small ? 4 : 3;
+  return small ? 3 : 2;
+}
+
+/* Spread across waking hours rather than the clock, so nobody is reminded to
+   feed a puppy at 2am. First meal shortly after they're up, last a while before
+   bed so she isn't going to sleep on a full bladder. */
+function mealTimes(count, wakeTime, bedtime) {
+  const w = (wakeTime == null ? 7 : wakeTime) + 0.5;
+  let b = (bedtime == null ? 22 : bedtime) - 1.5;
+  if (b <= w) b = w + 1;
+  if (count <= 1) return [w];
+  const step = (b - w) / (count - 1);
+  return Array.from({ length: count }, (_, i) => Math.round((w + i * step) * 4) / 4);
+}
+
+function hourToday(now, hour) {
+  const d = new Date(now);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(),
+                  Math.floor(hour), Math.round((hour % 1) * 60), 0, 0).getTime();
+}
+
+/* The next meal that hasn't already happened. A meal counts as done if one was
+   logged within ~90 minutes of its slot, so being early or late doesn't produce
+   a reminder for something the family already did. */
+function nextMealDue(now, mealTimestamps, settings, weeks, sizeClass) {
+  const count = mealsPerDay(weeks, sizeClass);
+  const times = mealTimes(count, settings.wakeTime, settings.bedtime);
+  const WINDOW = 90 * 60000;
+
+  for (const h of times) {
+    const slot = hourToday(now, h);
+    const done = (mealTimestamps || []).some(ts => Math.abs(ts - slot) < WINDOW);
+    if (!done && slot > now - WINDOW) return { at: slot, index: times.indexOf(h) + 1, of: count };
+  }
+  /* everything done today — first slot tomorrow */
+  return { at: hourToday(now, times[0]) + 86400000, index: 1, of: count };
+}
+
 /* ---------- overnight ----------
    Nobody is setting an alarm for 3am, and a schedule that assumes they are
    produces guilt and then a closed app. So overnight is a declared state
@@ -503,6 +556,7 @@ if (typeof module !== 'undefined' && module.exports) {
     LADDER_START_SECONDS, LADDER_GRADUATE_SECONDS, OUTCOMES, ladderGrowthStep, absenceCeilingSeconds,
     planAbsenceRep, updateLadder, separationRedFlags, absenceCeilingDetail,
     isOvernight, isLastCall, nextWakeTs, expectedNightBreaks, LAST_CALL_MINUTES,
+  mealsPerDay, mealTimes, nextMealDue, hourToday,
   SLEEP_BAND_HOURS, wakeWindowMinutes, isOvertired, BITE_SEVERITY,
     SOCIALISATION_CORE_DEADLINE_WEEKS, socialisationPhase, fearPeriodBanner,
     PASS_THRESHOLD, RECALL_PASS_THRESHOLD, MAX_LURED_REPS, MAX_BLOCKS_PER_SKILL_PER_DAY,

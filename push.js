@@ -102,11 +102,13 @@ const Push = (() => {
     return { ok: true };
   }
 
-  /* The app already computed when she's next due, so the worker never has to.
-     It holds one timestamp per household and no Google credentials at all. */
-  async function syncDue(dueAt) {
-    if (!enabled() || !dueAt) return;
-    await post('/due', { householdId: householdId(), dueAt }).catch(() => {});
+  /* The app computes what's actually pending and sends the whole list; each
+     POST replaces the last, which is what makes reminders self-cancelling. If
+     somebody takes her out, the next list simply doesn't contain that reminder.
+     The Worker never computes anything and never sees your data. */
+  async function syncReminders(reminders) {
+    if (!enabled()) return;
+    await post('/due', { householdId: householdId(), reminders: reminders || [] }).catch(() => {});
   }
 
   function householdId() {
@@ -121,5 +123,5 @@ const Push = (() => {
     });
   }
 
-  return { supported, unavailableReason, enabled, enable, disable, syncDue };
+  return { supported, unavailableReason, enabled, enable, disable, syncReminders };
 })();
