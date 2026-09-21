@@ -2,9 +2,11 @@
 
 A shared puppy-raising app for a household. Static PWA, no build step.
 
-**Status: M0 + most of M1.** Onboarding, the parameter engine, the potty schedule
-engine, one-tap logging and the Today screen all work. Sync between devices does
-not exist yet — everything is on-device.
+**Live: https://tripod110.github.io/scout/**
+
+**Status: v1.** Onboarding, the parameter engine, the potty schedule engine,
+one-tap logging with undo, editable dog details, and backup/restore all work.
+Sync between devices does not exist yet — everything is on-device.
 
 Working name. Nothing is published, so renaming is a find-and-replace.
 
@@ -74,12 +76,21 @@ traces to a forum post. The shipped rule is type-and-surface:
 **Escaping:** a field ending in `Html` is caller-built markup. Everything else
 is escaped. Greppable beats careful.
 
+## The iOS problem, and why sync is next
+
+On iOS a home-screen web app runs in a **different storage container from
+Safari** — localStorage is not shared. Since iOS Web Push requires the app to be
+on the Home Screen, the documented setup path would otherwise wipe the setup.
+
+Two mitigations ship in v1: the welcome screen tells iOS Safari users to install
+*first*, and Settings has a backup/restore file. Neither is a real fix. Firestore
+sync is, which is why it moved to the front of the queue.
+
 ## What's next
 
-M2 socialisation tracker (time-critical for any puppy under 16 weeks) ·
-M3 sleep and bite patterns · M4 push via a Cloudflare Worker ported from
-`peak/worker/` · M5 curriculum · M6 absence ladder · M7 AI coach behind a
-pre-render red-flag gate.
+Sync · M2 sleep and bite patterns · M3 socialisation woven into Today ·
+M4 push via a Cloudflare Worker ported from `peak/worker/` · M5 curriculum ·
+M6 absence ladder · M7 AI coach behind a pre-render red-flag gate.
 
 Plan: https://claude.ai/artifact/PWqvvaGCPE7Q4oiz3aRH4J
 
