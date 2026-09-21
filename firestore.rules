@@ -36,10 +36,8 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/households/$(hid)/members/$(request.auth.uid));
     }
 
-    /* A code is a door that is only open for a while. The owner opens it from
-       Settings, reads six characters across the kitchen, and it shuts itself —
-       which is a far better answer to brute force than a longer code nobody can
-       read aloud. */
+    /* The household's creator. Needed because a brand-new household has no
+       members yet, and somebody has to be allowed to be the first one. */
     function isOwner(hid) {
       let path = /databases/$(database)/documents/households/$(hid);
       return signedIn()
@@ -53,6 +51,10 @@ service cloud.firestore {
       return isMember(hid) || isOwner(hid);
     }
 
+    /* A code is a door that is only open for a while. The owner opens it from
+       Settings, reads six characters across the kitchen, and it shuts itself —
+       which is a far better answer to brute force than a longer code nobody can
+       read aloud. */
     function validInvite(hid, code) {
       let path = /databases/$(database)/documents/inviteCodes/$(code);
       return signedIn()
