@@ -19,7 +19,7 @@ rules_version = '2';
  * read, which is both harder to express and much harder to audit.
  *
  * Verified by tests/rules.test.mjs — 23 assertions against the emulator:
- *   npx firebase-tools emulators:exec --only firestore \n *       --project scout-rules-test "node tests/rules.test.mjs"
+ *   npx firebase-tools emulators:exec --only firestore --project scout-rules-test "node tests/rules.test.mjs"
  */
 
 service cloud.firestore {
