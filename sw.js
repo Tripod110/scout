@@ -13,14 +13,14 @@
  * to let them drift; doing it by hand is how a release silently ships nothing.
  */
 
-const VERSION = 13;
+const VERSION = 14;
 const CACHE = 'scout-v' + VERSION;
 
 const SHELL = [
   './', 'index.html',
-  'style.css?v=13',
-  'config.js?v=13', 'params.js?v=13', 'store.js?v=13', 'ui.js?v=13', 'sync.js?v=13', 'push.js?v=13',
-  'onboard.js?v=13', 'today.js?v=13', 'app.js?v=13',
+  'style.css?v=14',
+  'config.js?v=14', 'params.js?v=14', 'store.js?v=14', 'ui.js?v=14', 'sync.js?v=14', 'push.js?v=14',
+  'onboard.js?v=14', 'today.js?v=14', 'app.js?v=14',
   'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon-maskable-512.png'
 ];

@@ -40,6 +40,19 @@ service cloud.firestore {
        Settings, reads six characters across the kitchen, and it shuts itself —
        which is a far better answer to brute force than a longer code nobody can
        read aloud. */
+    function isOwner(hid) {
+      let path = /databases/$(database)/documents/households/$(hid);
+      return signedIn()
+        && exists(path)
+        && get(path).data.ownerUid == request.auth.uid;
+    }
+
+    /* Members may mint codes; so may the owner, who is a member in practice but
+       may not have their member doc written yet on a fresh setup. */
+    function canInviteTo(hid) {
+      return isMember(hid) || isOwner(hid);
+    }
+
     function validInvite(hid, code) {
       let path = /databases/$(database)/documents/inviteCodes/$(code);
       return signedIn()
@@ -58,7 +71,7 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['householdId', 'createdBy', 'expiresAt'])
         && request.resource.data.createdBy == request.auth.uid
-        && isMember(request.resource.data.householdId)
+        && canInviteTo(request.resource.data.householdId)
         /* A door nobody can leave propped open: one hour, enforced server-side
            so a modified client cannot mint a permanent code. */
         && request.resource.data.expiresAt is timestamp
@@ -82,12 +95,20 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if isMember(hid);
 
-        /* The join. A stranger with a live code may create exactly one document
-           and only their own, and may not name themselves a member of a
-           household the code doesn't point at. */
+        /* Two ways in, and both are narrow.
+           1. The OWNER adds themselves. Without this the whole thing deadlocks:
+              creating a member doc needs an invite, and creating an invite needs
+              membership, so nobody can ever be the first member of their own
+              household.
+           2. A stranger with a live code may create exactly one document and
+              only their own, and may not name themselves a member of a
+              household the code doesn't point at. */
         allow create: if signedIn()
           && request.auth.uid == uid
-          && validInvite(hid, request.resource.data.joinCode);
+          && (
+            isOwner(hid)
+            || validInvite(hid, request.resource.data.joinCode)
+          );
 
         allow update: if signedIn() && request.auth.uid == uid;   // rename yourself
         allow delete: if signedIn() && request.auth.uid == uid;   // leave

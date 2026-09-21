@@ -102,20 +102,13 @@ const Sync = (() => {
       dog: Store.state.dog || null,
       settings: Store.state.settings || null
     });
+    /* The owner adds themselves. The rules permit this without an invite code
+       specifically so a household can have a first member at all — see isOwner()
+       in firestore.rules. An earlier version tried to mint a code for the owner
+       and deadlocked, because minting one also required membership. */
     await ref.collection('members').doc(uid).set({
       name: Store.myName(),
       joinedAt: Date.now()
-      /* no joinCode: the owner's create is allowed by validInvite only for
-         joiners, and the owner path is covered by the household create rule */
-    }).catch(async () => {
-      /* The members rule requires a valid invite even for the owner, so the
-         owner mints a momentary code for themselves. Cheaper than a special
-         case in the rules, which is where bugs hide. */
-      const code = await openInvite(ref.id);
-      await ref.collection('members').doc(uid).set({
-        name: Store.myName(), joinedAt: Date.now(), joinCode: code
-      });
-      await db.collection('inviteCodes').doc(code).delete().catch(() => {});
     });
 
     Store.setHouseholdRemoteId(ref.id);

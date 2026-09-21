@@ -51,6 +51,23 @@ await t('a signed-out user CANNOT read it',       () => assertFails(getDoc(doc(a
 await t('a stranger CANNOT read the events',      () => assertFails(getDocs(collection(stranger, 'households', HID, 'events'))));
 await t('a stranger CANNOT list invite codes',    () => assertFails(getDocs(collection(stranger, 'inviteCodes'))));
 
+console.log('\nthe owner bootstrapping their own household');
+/* The path the first version of this file never exercised, because it seeded
+   the owner's membership with rules disabled — so the suite passed while
+   production deadlocked: creating a member doc needed an invite, and creating an
+   invite needed membership. Do it the way the app actually does. */
+const fresh = env.authenticatedContext('fresh_owner').firestore();
+await t('an owner can create their household', () => assertSucceeds(
+  setDoc(doc(fresh, 'households', 'house2'), { ownerUid: 'fresh_owner', createdAt: Date.now() })));
+await t('and then add THEMSELVES with no invite code', () => assertSucceeds(
+  setDoc(doc(fresh, 'households', 'house2', 'members', 'fresh_owner'), { name: 'Sue', joinedAt: Date.now() })));
+await t('and then mint an invite for it', () => assertSucceeds(
+  setDoc(doc(fresh, 'inviteCodes', 'FRESH1'), { householdId: 'house2', createdBy: 'fresh_owner', expiresAt: new Date(Date.now() + 30 * 60000) })));
+await t('a non-owner still CANNOT self-add without a code', () => assertFails(
+  setDoc(doc(stranger, 'households', 'house2', 'members', 'stranger_uid'), { name: 'X', joinedAt: Date.now() })));
+await t('an owner CANNOT add somebody else directly', () => assertFails(
+  setDoc(doc(fresh, 'households', 'house2', 'members', 'someone_else'), { name: 'X', joinedAt: Date.now() })));
+
 console.log('\njoining');
 await t('a live code lets a stranger join', () => assertSucceeds(
   setDoc(doc(stranger, 'households', HID, 'members', 'stranger_uid'), { name: 'Rob', joinedAt: Date.now(), joinCode: 'GOOD01' })));
