@@ -1,0 +1,266 @@
+/* Scout — router, event dispatch, boot.
+ *
+ * Loads last, so everything it calls already exists. The service-worker
+ * registration lives here rather than inline in index.html because the CSP sets
+ * `script-src 'self'` with no 'unsafe-inline' — which is what makes an injected
+ * script unable to execute, and is worth the small inconvenience.
+ *
+ * ONE DELEGATED LISTENER handles every tap. Screens return HTML strings and
+ * declare behaviour with data-action, so no screen wires its own handlers and
+ * nothing leaks when a view is replaced.
+ */
+
+const App = (() => {
+  let tab = 'today';
+  let sheetHtml = null;
+
+  /* ---------- render ---------- */
+
+  function render() {
+    const st = Store.state;
+    const view = document.getElementById('view');
+    if (!view) return;
+
+    /* Editing reuses the onboarding screens, so it takes over the viewport the
+       same way — one question, no tab bar, an explicit Cancel. */
+    const inFlow = !st.onboarded || Onboard.editing;
+
+    if (inFlow) {
+      document.body.classList.add('onboarding');
+      view.innerHTML = Onboard.render();
+      renderChrome(false);
+      renderSheet();
+      return;
+    }
+
+    document.body.classList.remove('onboarding');
+    renderChrome(true);
+
+    view.innerHTML = tab === 'today' ? Today.render()
+                   : tab === 'settings' ? settingsView()
+                   : '<p class="ob-lede">Not built yet.</p>';
+    renderSheet();
+  }
+
+  function renderSheet() {
+    const sheet = document.getElementById('sheet-root');
+    if (!sheet) return;
+    sheet.innerHTML = sheetHtml
+      ? `<div class="sheet-scrim" data-action="close-sheet"></div>
+         <div class="sheet" role="dialog" aria-modal="true">
+           <button class="sheet-x" data-action="close-sheet" aria-label="Close">${icon('x', 22)}</button>
+           ${sheetHtml}
+         </div>`
+      : '';
+  }
+
+  function renderChrome(show) {
+    const bar = document.getElementById('tabbar');
+    const top = document.getElementById('topbar');
+    if (bar) bar.hidden = !show;
+    if (top) top.hidden = !show;
+    if (!show) return;
+
+    const dog = Store.state.dog;
+    const title = document.getElementById('header-title');
+    if (title) title.textContent = dog?.name || 'Scout';
+
+    const sub = document.getElementById('header-sub');
+    if (sub && dog?.dob) sub.textContent = fmtAge(ageWeeks(dog.dob, Date.now()));
+
+    for (const b of bar.querySelectorAll('.tab')) {
+      const on = b.dataset.tab === tab;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-current', on ? 'page' : 'false');
+    }
+  }
+
+  function goTab(t) { tab = t; sheetHtml = null; render(); window.scrollTo({ top: 0 }); }
+  function openSheet(html) { sheetHtml = html; render(); }
+  function closeSheet() { sheetHtml = null; render(); }
+
+  /* ---------- settings ---------- */
+
+  function settingsView() {
+    const st = Store.state;
+    const dog = st.dog || {};
+    const p = sizeParams(dog);
+    const w = ageWeeks(dog.dob, Date.now());
+
+    return `
+      ${card(`
+        <h2>Text size</h2>
+        ${choiceList('set-scale', [
+          { value: 'normal',  label: 'Normal' },
+          { value: 'large',   label: 'Large' },
+          { value: 'largest', label: 'Largest' }
+        ], st.settings.scale)}
+      `)}
+
+      ${card(`
+        <h2>${esc(dog.name || 'Your puppy')}</h2>
+        <p class="stat-why">Tap anything to change it.</p>
+        <div class="edit-rows">
+          ${editRow('name', 'Name', dog.name || '—')}
+          ${editRow('dob', 'Age', fmtAge(w) + (dog.dobEstimated ? ' (estimated)' : ''))}
+          ${editRow('sizeClass', 'Grown-up size', (SIZE_LABELS[p.sizeClass] || 'Not set').split(' — ')[0] + (p.confident ? '' : ' — assumed'))}
+          ${editRow('confinementType', 'Sleeps in', CONFINEMENT_TYPES[dog.confinementType]?.label || 'Not set')}
+          ${editRow('breedGroup', 'Breed group', dog.breedGroup ? FUNCTIONAL_GROUPS[dog.breedGroup]?.label : 'Not set')}
+          ${editRow('traits', 'What she’s like', (dog.traits || []).length + ' ticked')}
+        </div>
+      `)}
+
+      ${card(`
+        <h2>Toilet break timing</h2>
+        <p class="stat-why">Scout suggests every ${esc(fmtDuration(pottyIntervalMinutes(dog, Date.now(), st.settings.pottySlider)))}. If that feels too often, ease it off — an app you ignore helps nobody.</p>
+        ${choiceList('set-slider', [
+          { value: '0.85', label: 'Tighter',  sub: 'Fewer accidents, more trips' },
+          { value: '1',    label: 'As advised' },
+          { value: '1.2',  label: 'Easier',   sub: 'Fewer trips, expect more accidents' }
+        ], String(st.settings.pottySlider))}
+      `)}
+
+      ${card(`
+        <h2>Backup</h2>
+        <p class="stat-why">Everything is stored on this phone only. Clearing your browser data, losing the phone, or adding Scout to your Home Screen will all lose it — so save a copy now and then.</p>
+        <button class="claim-btn" data-action="export">Save a backup file</button>
+        <button class="claim-btn" data-action="import" style="margin-top:.5rem">Restore from a backup</button>
+      `)}
+
+      ${shouldWarnAboutInstall() ? noteHtml('<b>You’re using Scout in Safari.</b> If you add it to your Home Screen now, it will open empty — iPhone keeps them separate. Save a backup first, then restore it in the Home Screen version.', 'warn') : ''}
+
+      ${card(`
+        <h2>Start over</h2>
+        <p class="stat-why">Clears everything on this device and returns to setup.</p>
+        <button class="claim-btn danger" data-action="reset">Delete and start again</button>
+      `)}
+
+      <p class="ob-foot">Scout works on one phone at the moment. Sharing between phones is being built.</p>
+      <p class="ob-foot">Scout is not a veterinary service and does not diagnose. Anything that worries you about your puppy's health is a question for your vet.</p>`;
+  }
+
+  function editRow(field, label, value) {
+    return `<button class="edit-row" data-action="edit-dog" data-value="${esc(field)}">
+      <span class="er-label">${esc(label)}</span>
+      <span class="er-value">${esc(value)}</span>
+      ${icon('chevron', 18)}
+    </button>`;
+  }
+
+  /* ---------- backup ----------
+     Until sync exists this is the only thing standing between a household and
+     total loss, so it is a plain file the user can email to themselves. */
+
+  function doExport() {
+    try {
+      const blob = new Blob([Store.exportJSON()], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const name = (Store.state.dog?.name || 'scout').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      a.href = url;
+      a.download = `scout-${name}-${Store.dayKey(Date.now())}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast('Backup saved');
+    } catch {
+      toast('Couldn’t save the backup on this device');
+    }
+  }
+
+  function doImport() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = Store.importJSON(String(reader.result));
+        if (res.ok) { applyScale(Store.state.settings.scale); goTab('today'); toast(`Restored ${res.dog || 'your puppy'}`); }
+        else toast(res.error);
+      };
+      reader.onerror = () => toast('Couldn’t read that file');
+      reader.readAsText(file);
+    });
+    input.click();
+  }
+
+  /* ---------- dispatch ---------- */
+
+  function onTap(e) {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    const value = el.dataset.value;
+    const view = document.getElementById('view');
+
+    /* global, available from any screen */
+    switch (action) {
+      case 'close-sheet': closeSheet(); return;
+      case 'tab':         goTab(el.dataset.tab); return;
+      case 'set-scale':   Store.setSettings({ scale: value }); applyScale(value); render(); return;
+      case 'set-slider':  Store.setSettings({ pottySlider: Number(value) }); render(); return;
+      case 'edit-dog':    Onboard.edit(value); return;
+      case 'export':      doExport(); return;
+      case 'import':      doImport(); return;
+      case 'undo-event':  Store.tombstone(value); toast('Undone'); render(); return;
+      case 'reset':
+        if (confirm('Delete everything on this device and start again?')) { Store.resetAll(); location.reload(); }
+        return;
+    }
+
+    if (!Store.state.onboarded || Onboard.editing) {
+      if (Onboard.handle(action, value, view)) return;
+      return;
+    }
+    if (Today.handle(action, value)) { render(); return; }
+  }
+
+  /* ---------- boot ---------- */
+
+  function boot() {
+    Store.load();
+    applyScale(Store.state.settings.scale);
+    Store.autoCloseStaleNap(Date.now());
+
+    document.addEventListener('click', onTap);
+
+    /* Enter should submit a single-field step — otherwise the keyboard's Go key
+       does nothing and people think the app is stuck. */
+    document.addEventListener('keydown', ev => {
+      if (ev.key !== 'Enter') return;
+      if (!ev.target.closest('input')) return;
+      const btn = document.querySelector('.ob .big-btn:not(.tone-quiet)');
+      if (btn) { ev.preventDefault(); btn.click(); }
+    });
+
+    render();
+
+    /* Re-render the countdown on a slow tick. A minute is plenty for an
+       "in 42 min" line and costs nothing; faster is just battery. */
+    setInterval(() => {
+      if (Store.state.onboarded && !Onboard.editing && tab === 'today' && !sheetHtml) {
+        Store.autoCloseStaleNap(Date.now());
+        render();
+      }
+    }, 60000);
+
+    /* Coming back to a backgrounded PWA should show current state. */
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { Store.autoCloseStaleNap(Date.now()); render(); }
+    });
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.warn('sw', err));
+      });
+    }
+  }
+
+  return { boot, render, goTab, openSheet, closeSheet };
+})();
+
+App.boot();

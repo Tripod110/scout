@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- Nothing leaves this device yet, so connect-src is 'self' and stays that way
+     until sync lands — at which point Firestore's hosts and the Worker get
+     added explicitly, and nothing else ever does. script-src 'self' with no
+     'unsafe-inline' is why the service-worker registration lives in app.js:
+     there are no inline scripts, so an injected one cannot execute. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data:;
+  connect-src 'self';
+  form-action 'none';
+  base-uri 'none';
+  object-src 'none'">
+<!-- No user-scalable=no: blocking pinch-zoom fails WCAG 1.4.4, and this app is
+     built for people who may want to zoom. viewport-fit=cover is what the
+     edge-to-edge layout needs. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scout — puppy raising, shared</title>
+<meta name="description" content="A shared puppy log for the whole household. Toilet schedule worked out from her age, sleep and biting patterns, and what to work on next — without the streaks.">
+<meta name="theme-color" content="#f6f6f3">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scout">
+<link rel="stylesheet" href="style.css?v=6">
+</head>
+<body class="onboarding">
+
+<header class="topbar" id="topbar" hidden>
+  <h1 id="header-title">Scout</h1>
+  <span class="sub" id="header-sub"></span>
+</header>
+
+<main id="view" class="view"></main>
+
+<nav class="tabbar" id="tabbar" aria-label="Main" hidden>
+  <button class="tab" data-action="tab" data-tab="today">
+    <svg class="ico" viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-6.5 8 6.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/></svg>
+    Today
+  </button>
+  <button class="tab" data-action="tab" data-tab="settings">
+    <svg class="ico" viewBox="0 0 24 24" width="23" height="23" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18"/></svg>
+    Settings
+  </button>
+</nav>
+
+<!-- announcements for changes that happen without navigation -->
+<div id="sr-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+<div id="sheet-root"></div>
+<div id="toast-root"></div>
+
+<script src="params.js?v=6"></script>
+<script src="store.js?v=6"></script>
+<script src="ui.js?v=6"></script>
+<script src="onboard.js?v=6"></script>
+<script src="today.js?v=6"></script>
+<script src="app.js?v=6"></script>
+</body>
+</html>
