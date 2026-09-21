@@ -13,14 +13,14 @@
  * to let them drift; doing it by hand is how a release silently ships nothing.
  */
 
-const VERSION = 10;
+const VERSION = 13;
 const CACHE = 'scout-v' + VERSION;
 
 const SHELL = [
   './', 'index.html',
-  'style.css?v=10',
-  'config.js?v=10', 'params.js?v=10', 'store.js?v=10', 'ui.js?v=10', 'sync.js?v=10', 'push.js?v=10',
-  'onboard.js?v=10', 'today.js?v=10', 'app.js?v=10',
+  'style.css?v=13',
+  'config.js?v=13', 'params.js?v=13', 'store.js?v=13', 'ui.js?v=13', 'sync.js?v=13', 'push.js?v=13',
+  'onboard.js?v=13', 'today.js?v=13', 'app.js?v=13',
   'manifest.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon-maskable-512.png'
 ];
@@ -56,8 +56,16 @@ self.addEventListener('fetch', e => {
   if (url.origin !== location.origin) return;
 
   if (req.mode === 'navigate') {
+    /* cache:'no-store' so the network-first path can't be satisfied by the
+       browser's own HTTP cache. index.html is the one file that must never be
+       stale — it carries the ?v=N references that pin every other asset — and
+       a conditional revalidation is cheap on a file this small.
+
+       Belt and braces rather than a fix for an observed bug: the stale load
+       that prompted this turned out to be the dev server being down, which is
+       the cache fallback working correctly. */
     e.respondWith(
-      fetch(req)
+      fetch(req.url, { cache: 'no-store' })
         .then(r => {
           const copy = r.clone();
           caches.open(CACHE).then(c => c.put('index.html', copy)).catch(() => {});

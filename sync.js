@@ -44,14 +44,17 @@ const Sync = (() => {
 
   /* ---------- boot ---------- */
 
+  /* Callable more than once: the key arrives after boot, pasted in Settings, so
+     the first attempt legitimately fails and a later one must be able to
+     succeed. initializeApp throws if called twice, hence the guard. */
   async function init() {
     if (!window.firebase || !firebaseConfigured()) {
-      setStatus('local', 'Sync not set up');
+      setStatus('local', firebaseProjectPresent() ? 'Key needed on this phone' : 'Sync not set up');
       return false;
     }
     try {
       setStatus('connecting');
-      firebase.initializeApp(FIREBASE_CONFIG);
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
       auth = firebase.auth();
       db = firebase.firestore();
 
@@ -82,7 +85,9 @@ const Sync = (() => {
     if (c.includes('permission-denied')) return 'Permission denied — check the security rules are published.';
     if (c.includes('unavailable')) return 'Can’t reach the server right now.';
     if (c.includes('auth/operation-not-allowed')) return 'Anonymous sign-in isn’t switched on in Firebase.';
-    if (c.includes('auth/configuration-not-found')) return 'Firebase project not found — check firebase-config.js.';
+    if (c.includes('auth/configuration-not-found')) return 'Firebase project not found — check config.js.';
+    if (c.includes('auth/api-key-not-valid') || c.includes('auth/invalid-api-key')) return 'That key was rejected — check you copied all of it.';
+    if (c.includes('requests-from-referer') || c.includes('referer')) return 'This key is locked to another website. Check its restrictions in Google Cloud Console.';
     return e?.message || 'Something went wrong.';
   }
 

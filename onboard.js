@@ -111,19 +111,27 @@ const Onboard = (() => {
       ${shouldWarnAboutInstall() ? installFirstCard() : ''}
 
       ${bigButton({ action: 'ob-start', label: 'Set up my puppy', sub: 'Takes about a minute' })}
-      ${firebaseConfigured() ? bigButton({ action: 'ob-join-screen', label: 'Join my family', sub: 'Someone gave me a code', tone: 'quiet' }) : ''}
+      ${firebaseProjectPresent() ? bigButton({ action: 'ob-join-screen', label: 'Join my family', sub: 'Someone gave me a code', tone: 'quiet' }) : ''}
 
-      <p class="ob-foot">${firebaseConfigured()
+      <p class="ob-foot">${firebaseProjectPresent()
         ? 'Whoever sets up first can invite the rest of the household — everyone then sees the same puppy.'
         : 'Scout works on one phone at the moment. Everything stays on your device; nothing is sent anywhere.'}</p>
       <p class="ob-foot">Scout is not a vet. If something about your puppy worries you, call your vet — this app will always tell you to do that rather than guess.</p>`,
 
+    /* A second phone needs BOTH things it can't have yet: the family key (kept
+       off the internet, so it has to be told to each device) and a live invite
+       code. Asking for them on one screen beats sending someone to Settings and
+       back mid-join. The key field disappears once this phone has it. */
     join: () => `
       ${backBtn('welcome')}
-      <h2>What's the code?</h2>
-      <p class="ob-lede">Ask whoever set Scout up to tap <strong>Invite someone</strong> in Settings. Codes last an hour.</p>
+      <h2>Join your family</h2>
+      <p class="ob-lede">Ask whoever set Scout up. They'll tap <strong>Invite someone</strong> in Settings for the code${firebaseConfigured() ? '' : ', and they have the family key written down'}.</p>
       ${field({ id: 'ob-join-name', label: 'Your name', value: '', placeholder: 'e.g. Dad' })}
-      ${field({ id: 'ob-code', label: 'Invite code', placeholder: 'ABC123' })}
+      ${firebaseConfigured() ? '' : field({
+        id: 'ob-join-key', label: 'Family key', placeholder: 'AIza…',
+        hint: 'A long code beginning AIza. You only need this once on this phone.'
+      })}
+      ${field({ id: 'ob-code', label: 'Invite code', placeholder: 'ABC123', hint: 'Six letters and numbers. Lasts an hour.' })}
       ${bigButton({ action: 'ob-do-join', label: 'Join' })}`,
 
     yourName: () => `
@@ -316,7 +324,7 @@ const Onboard = (() => {
 
   /* ---------- actions ---------- */
 
-  function handle(action, value, root) {
+  async function handle(action, value, root) {
     const val = sel => (root.querySelector(sel)?.value || '').trim();
 
     switch (action) {
@@ -327,6 +335,17 @@ const Onboard = (() => {
         const name = val('#ob-join-name');
         const code = val('#ob-code');
         if (!name) { toast('Pop your name in first'); return true; }
+
+        /* The key first — without it there is nothing to talk to, and failing
+           here is much clearer than a permission error after the code. */
+        if (!firebaseConfigured()) {
+          const key = val('#ob-join-key');
+          if (!looksLikeApiKey(key)) { toast('The family key should start AIza and be 39 characters'); return true; }
+          setFirebaseApiKey(key);
+          const ok = await Sync.init();
+          if (!ok) { toast(Sync.getStatus().detail || 'Couldn’t connect with that key'); return true; }
+        }
+
         if (!code) { toast('Enter the code you were given'); return true; }
         toast('Joining…');
         /* The household has to exist locally before the merge lands, otherwise

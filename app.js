@@ -161,10 +161,21 @@ const App = (() => {
      key left under the mat — a six-character code you can read across a kitchen
      is only safe because it expires. */
   function sharingCard() {
-    if (!firebaseConfigured()) {
+    /* No project at all — nothing to offer. */
+    if (!firebaseProjectPresent()) {
       return card(`
         <h2>Sharing</h2>
         <p class="stat-why">Not set up on this copy of Scout. Everything stays on this phone.</p>
+      `);
+    }
+
+    /* Project exists, but this phone hasn't been given the key. Deliberately
+       not in the repo, so each phone is told it once. */
+    if (!firebaseConfigured()) {
+      return card(`
+        <h2>Sharing</h2>
+        <p class="stat-why">To share with the rest of the household, this phone needs the family key — a short code beginning <code>AIza</code>. Ask whoever set Scout up; they have it written down.</p>
+        <button class="claim-btn" data-action="enter-key">Enter the family key</button>
       `);
     }
     const s = Sync.getStatus();
@@ -184,6 +195,7 @@ const App = (() => {
         `<li>${esc(m.name)}${m.deviceId === Store.deviceId() ? ' <span class="you">this phone</span>' : ''}</li>`).join('')}</ul>` : ''}
       <button class="claim-btn" data-action="open-invite">Invite someone</button>
       ${connected ? `<button class="claim-btn" data-action="leave-household" style="margin-top:.5rem">Stop sharing on this phone</button>` : ''}
+      <button class="claim-btn" data-action="forget-key" style="margin-top:.5rem">Remove the key from this phone</button>
     `);
   }
 
@@ -280,6 +292,35 @@ const App = (() => {
       case 'set-bedtime': Store.setSettings({ bedtime: Number(value) }); render(); return;
       case 'set-waketime':Store.setSettings({ wakeTime: Number(value) }); render(); return;
 
+      case 'enter-key':
+        openSheet(`
+          <h2>The family key</h2>
+          <p class="sheet-lede">One long code beginning <strong>AIza</strong>. It's kept off the internet on purpose, so each phone has to be told it once. It stays on this phone only.</p>
+          ${field({ id: 'api-key', label: 'Family key', placeholder: 'AIza…' })}
+          <button class="claim-btn" data-action="save-key">Save</button>
+        `);
+        return;
+
+      case 'save-key': {
+        const input = document.getElementById('api-key');
+        const k = (input?.value || '').trim();
+        if (!looksLikeApiKey(k)) { toast('That doesn’t look right — it should start AIza and be 39 characters'); return; }
+        setFirebaseApiKey(k);
+        closeSheet();
+        toast('Connecting…');
+        Sync.init().then(ok => { toast(ok ? 'Connected' : Sync.getStatus().detail || 'Couldn’t connect'); render(); });
+        return;
+      }
+
+      case 'forget-key':
+        if (confirm('Remove the key from this phone? Sharing stops here until you enter it again. Your logs stay.')) {
+          Sync.detach();
+          setFirebaseApiKey('');
+          toast('Key removed from this phone');
+          render();
+        }
+        return;
+
       case 'open-invite': {
         toast('Getting a code…');
         (async () => {
@@ -309,8 +350,14 @@ const App = (() => {
         return;
     }
 
+    /* Onboard.handle is async (the join flow awaits a sign-in), so its return
+       value is a Promise and testing it for truthiness would be meaningless.
+       Nothing else claims actions while a flow is on screen, so just hand off. */
     if (!Store.state.onboarded || Onboard.editing) {
-      if (Onboard.handle(action, value, view)) return;
+      Onboard.handle(action, value, view).catch(e => {
+        console.error(e);
+        toast('Something went wrong — try again');
+      });
       return;
     }
     if (Today.handle(action, value)) { render(); return; }
