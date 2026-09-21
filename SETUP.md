@@ -52,6 +52,20 @@ everyone's data the moment they add Scout to their Home Screen.
    git add -A && git commit -m "Enable sync" && git push
    ```
 
+### Checking the rules yourself
+
+They're already verified — 23 assertions covering the cases that matter, run
+against the Firestore emulator:
+
+```
+npm i firebase-tools @firebase/rules-unit-testing
+npx firebase-tools emulators:exec --only firestore --project scout-rules-test "node tests/rules.test.mjs"
+```
+
+It proves a stranger can't read your household, an expired code can't join, a
+joiner can't add anyone but themselves, events can't be rewritten or deleted,
+and a member can't seize ownership.
+
 ### Check it worked
 
 Open Scout, finish setup, then **Settings → Sharing** should say *Ready*. Tap
