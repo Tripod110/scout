@@ -184,7 +184,7 @@ const Sync = (() => {
     unsubs.push(ref.collection('members').onSnapshot(snap => {
       const members = [];
       snap.forEach(doc => members.push({ uid: doc.id, name: doc.data().name }));
-      Store.mergeRemoteMembers(members);
+      Store.mergeRemoteMembers(members, uid);
     }, () => { /* membership is cosmetic; a failure here is not worth a banner */ }));
 
     setStatus('live', 'Sharing on');

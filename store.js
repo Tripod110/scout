@@ -438,11 +438,22 @@ function mergeRemoteDog(dog) {
   if (JSON.stringify(state.dog) !== before) { save(); emit(); }
 }
 
-function mergeRemoteMembers(members) {
+function mergeRemoteMembers(members, currentUid) {
   if (!state.household) return;
-  state.household.members = members.map(m => ({
-    deviceId: m.uid, name: m.name, remote: true
-  }));
+  const localId = deviceId();
+  const previousSelf = state.household.members.find(m => m.deviceId === localId);
+  state.household.members = members.map(m => {
+    const isSelf = !!currentUid && m.uid === currentUid;
+    return Object.assign({}, isSelf ? previousSelf : null, {
+      /* Firebase UIDs authorize membership; device IDs attribute local events.
+         They are deliberately separate. Only this signed-in member maps back
+         to this phone, so me()/myName() survive a remote member snapshot. */
+      deviceId: isSelf ? localId : null,
+      remoteUid: m.uid,
+      name: m.name,
+      remote: true
+    });
+  });
   save(); emit();
 }
 
