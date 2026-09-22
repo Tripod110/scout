@@ -309,6 +309,11 @@ const Today = (() => {
     Push.syncReminders(pendingReminders(now));
   }
 
+  function refreshReminders() {
+    if (typeof Push === 'undefined' || !Push.enabled()) return;
+    return Push.refresh(pendingReminders(Date.now()));
+  }
+
   /* ---------- actions ---------- */
 
   function handle(action, value) {
@@ -440,5 +445,5 @@ const Today = (() => {
       </div>`;
   }
 
-  return { render, handle, nextDue };
+  return { render, handle, nextDue, refreshReminders };
 })();

@@ -169,7 +169,10 @@ const Sync = (() => {
     unsubs.push(ref.onSnapshot(snap => {
       if (!snap.exists) return;
       const d = snap.data();
-      if (d.dog) Store.mergeRemoteDog(d.dog);
+      if (d.dog) {
+        Store.mergeRemoteDog(d.dog);
+        Today.refreshReminders();
+      }
       setStatus('live', 'Sharing on');
     }, err => setStatus('error', friendlyError(err))));
 

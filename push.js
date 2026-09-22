@@ -73,14 +73,7 @@ const Push = (() => {
           applicationServerKey: b64ToBytes(await vapidPublicKey())
         });
       }
-      await post('/subscribe', {
-        householdId: householdId(),
-        subscription: sub.toJSON(),
-        tzOffset: new Date().getTimezoneOffset(),
-        bedtime: Store.state.settings.bedtime,
-        wakeTime: Store.state.settings.wakeTime,
-        dogName: Store.state.dog?.name || 'your puppy'
-      });
+      await subscribe(sub);
       Store.setSettings({ remindersOn: true });
       return { ok: true };
     } catch (e) {
@@ -111,6 +104,37 @@ const Push = (() => {
     await post('/due', { householdId: householdId(), reminders: reminders || [] }).catch(() => {});
   }
 
+  function subscriptionBody(sub) {
+    return {
+      householdId: householdId(),
+      subscription: sub.toJSON(),
+      tzOffset: new Date().getTimezoneOffset(),
+      bedtime: Store.state.settings.bedtime,
+      wakeTime: Store.state.settings.wakeTime,
+      dogName: Store.state.dog?.name || 'your puppy'
+    };
+  }
+
+  function subscribe(sub) {
+    return post('/subscribe', subscriptionBody(sub));
+  }
+
+  /* Refresh both halves of the Worker state after anything that changes the
+     schedule or its delivery window. Reusing /subscribe updates quiet hours,
+     timezone and dog name under the existing endpoint-derived KV key. */
+  async function refresh(reminders) {
+    if (!enabled()) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) return;
+      await subscribe(sub);
+      await post('/due', { householdId: householdId(), reminders: reminders || [] });
+    } catch (e) {
+      console.warn('push refresh', e);
+    }
+  }
+
   function householdId() {
     return Store.state.household?.remoteId || Store.state.household?.id || 'local';
   }
@@ -123,5 +147,5 @@ const Push = (() => {
     });
   }
 
-  return { supported, unavailableReason, enabled, enable, disable, syncReminders };
+  return { supported, unavailableReason, enabled, enable, disable, syncReminders, refresh };
 })();

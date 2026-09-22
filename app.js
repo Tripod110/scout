@@ -277,20 +277,36 @@ const App = (() => {
       case 'close-sheet': closeSheet(); return;
       case 'tab':         goTab(el.dataset.tab); return;
       case 'set-scale':   Store.setSettings({ scale: value }); applyScale(value); render(); return;
-      case 'set-slider':  Store.setSettings({ pottySlider: Number(value) }); render(); return;
+      case 'set-slider':
+        Store.setSettings({ pottySlider: Number(value) });
+        Today.refreshReminders();
+        render();
+        return;
       case 'edit-dog':    Onboard.edit(value); return;
       case 'export':      doExport(); return;
       case 'import':      doImport(); return;
       case 'undo-event':  Store.tombstone(value); toast('Undone'); render(); return;
       case 'push-on':
-        Push.enable().then(r => { toast(r.ok ? 'Reminders on' : r.error); render(); });
+        Push.enable().then(r => {
+          if (r.ok) Today.refreshReminders();
+          toast(r.ok ? 'Reminders on' : r.error);
+          render();
+        });
         return;
       case 'push-off':
         Push.disable().then(() => { toast('Reminders off'); render(); });
         return;
 
-      case 'set-bedtime': Store.setSettings({ bedtime: Number(value) }); render(); return;
-      case 'set-waketime':Store.setSettings({ wakeTime: Number(value) }); render(); return;
+      case 'set-bedtime':
+        Store.setSettings({ bedtime: Number(value) });
+        Today.refreshReminders();
+        render();
+        return;
+      case 'set-waketime':
+        Store.setSettings({ wakeTime: Number(value) });
+        Today.refreshReminders();
+        render();
+        return;
 
       case 'enter-key':
         openSheet(`

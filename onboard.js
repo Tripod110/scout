@@ -79,6 +79,7 @@ const Onboard = (() => {
       breedConfidence: draft.breedConfidence || 'unknown',
       traits: draft.traits || []
     });
+    Today.refreshReminders();
     editing = null;
     toast('Saved');
     App.goTab('settings');
