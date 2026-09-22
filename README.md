@@ -16,6 +16,7 @@ no longer free. Decide soon if it's going to change.
 ```
 node tools/release.mjs          # check version consistency
 node tests/params.test.js       # 114 assertions on the evidence layer
+node tests/sync.test.js         # sync lifecycle and disconnect regression
 python -m http.server 5178      # or any static server
 ```
 

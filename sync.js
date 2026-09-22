@@ -195,6 +195,22 @@ const Sync = (() => {
     unsubs = [];
   }
 
+  /* Stop this runtime from reading or writing remote data without removing the
+     saved household link. Removing the API key is reversible: when the key is
+     entered again, init() can reattach to the same household using Firebase's
+     persisted anonymous identity. Clearing the adapter matters as much as
+     detaching listeners — otherwise local events would continue to call the
+     already-created Firestore adapter after the UI said sharing had stopped. */
+  function disconnect() {
+    detach();
+    Store.setSyncAdapter(null);
+    hid = null;
+    db = null;
+    auth = null;
+    uid = null;
+    setStatus('local', 'Key needed on this phone');
+  }
+
   /* ---------- writes ----------
      Fire-and-forget on purpose. Firestore queues writes offline and replays
      them, so awaiting here would only make the UI wait for a round trip it
@@ -251,6 +267,6 @@ const Sync = (() => {
     setStatus('live', 'Not shared');
   }
 
-  return { init, createRemote, openInvite, join, leave, detach, onStatus, getStatus,
+  return { init, createRemote, openInvite, join, leave, detach, disconnect, onStatus, getStatus,
            get connected() { return !!hid; } };
 })();

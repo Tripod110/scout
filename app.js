@@ -314,7 +314,7 @@ const App = (() => {
 
       case 'forget-key':
         if (confirm('Remove the key from this phone? Sharing stops here until you enter it again. Your logs stay.')) {
-          Sync.detach();
+          Sync.disconnect();
           setFirebaseApiKey('');
           toast('Key removed from this phone');
           render();
