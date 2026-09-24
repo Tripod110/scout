@@ -98,6 +98,12 @@ const Onboard = (() => {
     return `<button class="back" data-action="ob-cancel-edit">${icon('back', 20)} Cancel</button>`;
   }
 
+  /* Safari on iOS has readText from 13.4; where it's missing the button would
+     be a control that can't work, so it isn't drawn. */
+  function canReadClipboard() {
+    return !!(navigator.clipboard && navigator.clipboard.readText);
+  }
+
   const SCREENS = {
 
     welcome: () => `
@@ -112,7 +118,7 @@ const Onboard = (() => {
       ${shouldWarnAboutInstall() ? installFirstCard() : ''}
 
       ${bigButton({ action: 'ob-start', label: 'Set up my puppy', sub: 'Takes about a minute' })}
-      ${firebaseProjectPresent() ? bigButton({ action: 'ob-join-screen', label: 'Join my family', sub: 'Someone gave me a code', tone: 'quiet' }) : ''}
+      ${firebaseProjectPresent() ? bigButton({ action: 'ob-join-screen', label: 'Join my family', sub: 'Someone sent me an invite', tone: 'quiet' }) : ''}
 
       <p class="ob-foot">${firebaseProjectPresent()
         ? 'Whoever sets up first can invite the rest of the household — everyone then sees the same puppy.'
@@ -121,18 +127,19 @@ const Onboard = (() => {
 
     /* A second phone needs BOTH things it can't have yet: the family key (kept
        off the internet, so it has to be told to each device) and a live invite
-       code. Asking for them on one screen beats sending someone to Settings and
-       back mid-join. The key field disappears once this phone has it. */
+       code. The invite message carries both, so the whole job is one paste.
+       A typed code still works when this phone already has the key. */
     join: () => `
       ${backBtn('welcome')}
       <h2>Join your family</h2>
-      <p class="ob-lede">Ask whoever set Scout up. They'll tap <strong>Invite someone</strong> in Settings for the code${firebaseConfigured() ? '' : ', and they have the family key written down'}.</p>
+      <p class="ob-lede">Ask whoever set Scout up to tap <strong>Invite someone</strong> in Settings and text you the invite. Copy their whole message, then come back here.</p>
       ${field({ id: 'ob-join-name', label: 'Your name', value: '', placeholder: 'e.g. Dad' })}
-      ${firebaseConfigured() ? '' : field({
-        id: 'ob-join-key', label: 'Family key', placeholder: 'AIza…',
-        hint: 'A long code beginning AIza. You only need this once on this phone.'
+      ${canReadClipboard() ? `<button class="claim-btn" style="margin-bottom:1rem" data-action="ob-paste-invite">Paste invite</button>` : ''}
+      ${field({
+        id: 'ob-invite', label: canReadClipboard() ? 'Or paste or type it here' : 'Paste the invite here',
+        placeholder: firebaseConfigured() ? 'The invite, or the six-letter code' : 'scout:…',
+        hint: firebaseConfigured() ? 'The whole message is fine. So is just the code.' : 'The whole message is fine — Scout picks out what it needs.'
       })}
-      ${field({ id: 'ob-code', label: 'Invite code', placeholder: 'ABC123', hint: 'Six letters and numbers. Lasts an hour.' })}
       ${bigButton({ action: 'ob-do-join', label: 'Join' })}`,
 
     yourName: () => `
@@ -332,22 +339,44 @@ const Onboard = (() => {
       case 'ob-start':       draft = {}; go('yourName'); return true;
       case 'ob-join-screen': go('join'); return true;
 
+      /* readText has to be called on the tap. iOS shows its own small "Paste"
+         bubble first; the user tapping that is the permission. */
+      case 'ob-paste-invite': {
+        try {
+          const text = await navigator.clipboard.readText();
+          const input = root.querySelector('#ob-invite');
+          if (input) input.value = text.trim();
+          const got = parseInvite(text);
+          toast(got.code ? 'Got it — now tap Join' : 'That doesn’t look like a Scout invite. Copy their whole message and try again.');
+        } catch {
+          toast('Couldn’t paste — press and hold the box below and choose Paste');
+        }
+        return true;
+      }
+
       case 'ob-do-join': {
         const name = val('#ob-join-name');
-        const code = val('#ob-code');
+        const { code, key } = parseInvite(val('#ob-invite'));
         if (!name) { toast('Pop your name in first'); return true; }
 
         /* The key first — without it there is nothing to talk to, and failing
-           here is much clearer than a permission error after the code. */
-        if (!firebaseConfigured()) {
-          const key = val('#ob-join-key');
-          if (!looksLikeApiKey(key)) { toast('The family key should start AIza and be 39 characters'); return true; }
+           here is much clearer than a permission error after the code. A key
+           in the invite always wins over one already stored: a phone holding a
+           stale or mistyped key would otherwise never recover. */
+        if (key && key !== firebaseApiKey()) {
+          Sync.disconnect();
           setFirebaseApiKey(key);
+        }
+        if (!firebaseConfigured()) {
+          toast('That’s missing the family key — paste their whole invite message, not just the code');
+          return true;
+        }
+        if (Sync.getStatus().status !== 'live') {
           const ok = await Sync.init();
-          if (!ok) { toast(Sync.getStatus().detail || 'Couldn’t connect with that key'); return true; }
+          if (!ok) { toast(Sync.getStatus().detail || 'Couldn’t connect'); return true; }
         }
 
-        if (!code) { toast('Enter the code you were given'); return true; }
+        if (!code) { toast('Paste the invite, or type the six-letter code'); return true; }
         toast('Joining…');
         /* The household has to exist locally before the merge lands, otherwise
            incoming members and events have nowhere to go. */

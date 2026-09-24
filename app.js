@@ -157,6 +157,32 @@ const App = (() => {
       <p class="ob-foot">Scout is not a veterinary service and does not diagnose. Anything that worries you about your puppy's health is a question for your vet.</p>`;
   }
 
+  /* The last invite made, kept so the share sheet can open synchronously on
+     the tap that asks for it. */
+  let pendingInvite = null;
+
+  /* Written for someone who has never seen Scout. The install step comes
+     first because on iPhone joining in Safari puts the household in the wrong
+     app — Safari and the Home Screen copy keep separate storage. */
+  function inviteMessage(code) {
+    const dog = Store.state.dog?.name || 'our puppy';
+    const url = location.origin + location.pathname;
+    return [
+      `Join ${dog} on Scout.`,
+      `First time? Open ${url} in Safari, tap Share, then Add to Home Screen. Open Scout from your Home Screen, not from Safari.`,
+      `Then tap Join my family, and Paste invite.`,
+      formatInvite(code, firebaseApiKey()),
+      `This invite works for the next hour.`
+    ].join('\n\n');
+  }
+
+  function copyInvite(text) {
+    if (!navigator.clipboard?.writeText) { toast('Couldn’t copy — read them the code instead'); return; }
+    navigator.clipboard.writeText(text)
+      .then(() => toast('Copied — paste it into a message to them'))
+      .catch(() => toast('Couldn’t copy — read them the code instead'));
+  }
+
   /* Sharing. The code is a door the owner opens for an hour, not a permanent
      key left under the mat — a six-character code you can read across a kitchen
      is only safe because it expires. */
@@ -343,9 +369,12 @@ const App = (() => {
           try {
             if (!Sync.connected) await Sync.createRemote();
             const code = await Sync.openInvite();
+            pendingInvite = inviteMessage(code);
             openSheet(`
               <h2>Invite someone</h2>
-              <p class="sheet-lede">On their phone: open Scout, tap <strong>Join my family</strong>, and type this in.</p>
+              <p class="sheet-lede">Send them the invite by text. It carries the code <em>and</em> the family key, so there's nothing to type.</p>
+              <button class="claim-btn" data-action="send-invite">Send the invite</button>
+              <p class="sheet-lede" style="margin-top:1.2rem">Standing next to them, and their Scout already has the key? They can just type this:</p>
               <p class="invite-code">${esc(code)}</p>
               <p class="sheet-lede">It works for the next hour, then stops. You can always make a new one.</p>
             `);
@@ -353,6 +382,20 @@ const App = (() => {
             toast('Couldn’t create an invite — ' + (e.message || 'try again'));
           }
         })();
+        return;
+      }
+
+      /* Must run inside the tap itself: iOS only allows the share sheet and
+         clipboard writes from a user gesture, which is why the message was
+         built ahead of time rather than after an await. */
+      case 'send-invite': {
+        const text = pendingInvite;
+        if (!text) { toast('That invite has gone — make a new one'); return; }
+        if (navigator.share) {
+          navigator.share({ text }).catch(e => {
+            if (e?.name !== 'AbortError') copyInvite(text);
+          });
+        } else copyInvite(text);
         return;
       }
 

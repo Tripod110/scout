@@ -66,6 +66,41 @@ function firebaseConfigured() {
   return firebaseProjectPresent() && looksLikeApiKey(firebaseApiKey());
 }
 
+/* ---------- invites ----------
+   One message carries both things a new phone needs: the live code and the
+   family key. Typing a 39-character key on a phone is where households drop
+   off, and a phone that silently never joined logs to itself while everyone
+   else wonders where the walks went.
+
+   It is plain text, not a link, on purpose. On iPhone a tapped link opens in
+   Safari, whose storage the Home Screen app cannot see — the join would land
+   in the wrong app. Text gets copied and pasted into the app that matters.
+
+   The key travels by text message between family members. That is the same
+   trust the "written down" key already had, and it identifies a project rather
+   than authorising anything — the rules and the one-hour code do that. */
+const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+function formatInvite(code, key) {
+  return 'scout:' + String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') + ':' + String(key || '').trim();
+}
+
+/* Accepts the whole pasted message, the bare token, or just a typed code.
+   Returns { code, key }, either of which may be '' when absent. */
+function parseInvite(text) {
+  const raw = String(text || '');
+  const token = /scout:([A-Za-z0-9-]{6,8}):(AIza[0-9A-Za-z_-]{35})/.exec(raw);
+  if (token) return { code: token[1].toUpperCase().replace(/-/g, ''), key: token[2] };
+
+  const keyMatch = /AIza[0-9A-Za-z_-]{35}/.exec(raw);
+  const key = keyMatch ? keyMatch[0] : '';
+  /* A bare code is only recognised when it is the whole input — hunting for
+     six letters inside a pasted paragraph would find words. */
+  const rest = raw.replace(key, '').toUpperCase().replace(/[\s-]/g, '');
+  const code = rest.length === 6 && [...rest].every(c => INVITE_ALPHABET.includes(c)) ? rest : '';
+  return { code, key };
+}
+
 /* Resolve the stored key into the config object at load time. */
 FIREBASE_CONFIG.apiKey = firebaseApiKey();
 

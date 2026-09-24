@@ -54,6 +54,11 @@ const Sync = (() => {
     }
     try {
       setStatus('connecting');
+      /* A phone that once held a wrong key keeps an app built from it, and
+         reusing that app would retry the wrong key forever. */
+      if (firebase.apps.length && firebase.app().options.apiKey !== FIREBASE_CONFIG.apiKey) {
+        await firebase.app().delete();
+      }
       if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
       auth = firebase.auth();
       db = firebase.firestore();

@@ -19,6 +19,7 @@ node tests/params.test.js       # 114 assertions on the evidence layer
 node tests/push.test.js         # reminder subscription refresh behavior
 node tests/store.test.js        # local identity and remote member merging
 node tests/sync.test.js         # sync lifecycle and disconnect regression
+node tests/invite.test.js       # invite message format and parsing
 python -m http.server 5178      # or any static server
 ```
 

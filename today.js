@@ -67,6 +67,17 @@ const Today = (() => {
     return mins;
   }
 
+  /* '' when sharing is fine, or can't exist on this copy of Scout at all. */
+  function sharingOffReason() {
+    if (!firebaseProjectPresent()) return '';
+    if (!firebaseConfigured()) return 'This phone doesn’t have the family key yet, so nobody else sees what you log here.';
+    const s = Sync.getStatus();
+    if (s.status === 'error') return 'Sharing has stopped working — ' + s.detail;
+    if (s.status === 'connecting') return '';
+    if (!Sync.connected) return 'You haven’t joined or invited anyone, so nobody else sees what you log here.';
+    return '';
+  }
+
   /* ---------- render ---------- */
 
   function render() {
@@ -91,6 +102,14 @@ const Today = (() => {
     const lastCall = isLastCall(new Date(now), st.settings.bedtime);
 
     let html = '';
+
+    /* 0. A phone that isn't sharing, said out loud. The failure this catches
+          is silent otherwise: that phone's walks and accidents never reach
+          anyone, and everyone else's schedule is quietly wrong. */
+    const off = sharingOffReason();
+    if (off) {
+      html += noteHtml(`<b>Only on this phone.</b> ${esc(off)} <button class="claim-btn" style="margin-top:.6rem" data-action="tab" data-tab="settings">Fix it in Settings</button>`, 'warn');
+    }
 
     /* 1. What did I miss. Costs one rollup read and is probably the single
           highest-value element in a four-handler house. */
